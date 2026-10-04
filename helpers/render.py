@@ -26,6 +26,7 @@ import json
 import re
 import subprocess
 import sys
+import unicodedata
 from fractions import Fraction
 from pathlib import Path
 
@@ -386,7 +387,8 @@ def concat_segments(segment_paths: list[Path], out_path: Path, edit_dir: Path) -
     """Lossless concat via the concat demuxer. No re-encode."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     concat_list = edit_dir / "_concat.txt"
-    concat_list.write_text("".join(f"file '{p.resolve()}'\n" for p in segment_paths))
+    # ffmpeg reads the list as UTF-8; Windows' default code page would garble non-ASCII paths
+    concat_list.write_text("".join(f"file '{p.resolve()}'\n" for p in segment_paths), encoding="utf-8")
 
     cmd = [
         "ffmpeg", "-y",
@@ -465,18 +467,135 @@ def chunk_words(words: list[dict]) -> list[list[dict]]:
     return chunks
 
 
-def build_master_srt(edl: dict, edit_dir: Path, out_path: Path) -> None:
+def _format_cue_en(chunk: list[dict]) -> str:
+    text = " ".join((w.get("text") or "").strip() for w in chunk)
+    text = re.sub(r"\s+", " ", text).strip()
+    # Strip trailing punctuation for cleaner uppercase look
+    text = text.rstrip(",;:")
+    return text.upper()
+
+
+# Traditional Chinese: cue length is measured in display width (CJK and
+# full-width punctuation count 2, everything else 1), since a Latin word inside
+# Chinese speech should not count each letter as a full character.
+ZH_PUNCT_BREAK = set("，。！？；：、,.!?;:")
+ZH_TRAILING_STRIP = "，。、；：,.;:"  # keep ？！ — they change the meaning
+ZH_CHUNK_MAX_WIDTH = 28   # about 14 Chinese characters per cue
+ZH_CHUNK_MIN_S = 0.8      # a punctuation-ended cue shorter than this merges on
+
+
+def display_width(text: str) -> int:
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in text)
+
+
+def _is_latin(c: str) -> bool:
+    return c.isascii() and c.isalnum()
+
+
+def _is_cjk_punct(c: str) -> bool:
+    return unicodedata.category(c).startswith("P") and display_width(c) == 2
+
+
+def join_zh(texts: list[str]) -> str:
+    """Join Chinese tokens: no space between Chinese words, one space where
+    either neighbour is a Latin letter or digit ("用 Claude Code 剪片")."""
+    out = ""
+    for t in texts:
+        t = t.strip()
+        if not t:
+            continue
+        if out:
+            a, b = out[-1], t[0]
+            if (_is_latin(a) or _is_latin(b)) and not (_is_cjk_punct(a) or _is_cjk_punct(b)):
+                out += " "
+        out += t
+    return out
+
+
+def chunk_words_zh(words: list[dict]) -> list[list[dict]]:
+    """Group Chinese transcript words into caption cues.
+
+    A cue closes on a pause before the next word, or on punctuation once it has
+    been on screen for ZH_CHUNK_MIN_S (so a lone "好，" does not flash). Adding
+    a word that would push it past ZH_CHUNK_MAX_WIDTH starts a new cue.
+    """
+    words = [w for w in words if (w.get("text") or "").strip()]
+    chunks: list[list[dict]] = []
+    current: list[dict] = []
+    for i, w in enumerate(words):
+        # measure the cue as it will be shown, without the trailing punctuation _format_cue_zh drops
+        candidate = join_zh([x["text"] for x in current + [w]]).rstrip(ZH_TRAILING_STRIP)
+        if current and display_width(candidate) > ZH_CHUNK_MAX_WIDTH:
+            chunks.append(current)
+            current = []
+        current.append(w)
+        text = w["text"].strip()
+        nxt = words[i + 1] if i + 1 < len(words) else None
+        gap = (nxt["start"] - w["end"]) if nxt else 0.0
+        dur = w["end"] - current[0]["start"]
+        if (
+            nxt is None
+            or gap >= CHUNK_PAUSE_S
+            or (text[-1] in ZH_PUNCT_BREAK and dur >= ZH_CHUNK_MIN_S)
+        ):
+            chunks.append(current)
+            current = []
+    return chunks
+
+
+def _format_cue_zh(chunk: list[dict]) -> str:
+    text = join_zh([w.get("text") or "" for w in chunk])
+    return text.rstrip(ZH_TRAILING_STRIP)
+
+
+def looks_chinese(transcript: dict) -> bool:
+    """True if Scribe tagged the transcript as Chinese, or most of its letters
+    are CJK ideographs. Used to warn when Chinese speech gets English rules."""
+    code = (transcript.get("language_code") or "").lower()
+    if code.startswith(("zh", "cmn", "yue")):
+        return True
+    text = "".join(w.get("text") or "" for w in transcript.get("words", []) if w.get("type") == "word")
+    letters = [c for c in text if c.isalpha()]
+    cjk = sum(1 for c in letters if "㐀" <= c <= "鿿")
+    return bool(letters) and cjk * 2 > len(letters)
+
+
+# Same look as the English style, in a face that has Chinese glyphs
+# (Helvetica has none; libass would fall back silently or draw boxes).
+SUB_FORCE_STYLE_ZH = SUB_FORCE_STYLE.replace("FontName=Helvetica", "FontName=Microsoft JhengHei")
+
+
+# Per-language caption rules: how words group into cues, how a cue's words
+# become text, and the libass style used when burning. Selected by --sub-lang.
+SUB_LANGS = {
+    "en": {
+        "chunk": chunk_words,
+        "format": _format_cue_en,
+        "force_style": SUB_FORCE_STYLE,
+    },
+    "zh-tw": {
+        "chunk": chunk_words_zh,
+        "format": _format_cue_zh,
+        "force_style": SUB_FORCE_STYLE_ZH,
+    },
+}
+
+
+def build_master_srt(edl: dict, edit_dir: Path, out_path: Path, sub_lang: str = "en") -> None:
     """Build an output-timeline SRT from per-source transcripts.
 
-    - phrase-aware ~2-word chunks (see chunk_words)
-    - UPPERCASE text
+    - chunking and text rules from SUB_LANGS[sub_lang]: "en" is phrase-aware
+      ~2-word UPPERCASE chunks (chunk_words), "zh-tw" is width-capped Chinese
+      cues (chunk_words_zh)
     - Output times computed as word.start - segment_start + segment_offset
     """
+    lang = SUB_LANGS[sub_lang]
     transcripts_dir = edit_dir / "transcripts"
     sources = edl["sources"]
 
     entries: list[tuple[float, float, str]] = []
     seg_offset = 0.0
+    warned_zh = False
 
     for r in edl["ranges"]:
         src_name = r["source"]
@@ -490,22 +609,25 @@ def build_master_srt(edl: dict, edit_dir: Path, out_path: Path) -> None:
             seg_offset += seg_duration
             continue
 
-        transcript = json.loads(tr_path.read_text())
+        transcript = json.loads(tr_path.read_text(encoding="utf-8"))
+        if sub_lang == "en" and not warned_zh and looks_chinese(transcript):
+            print(
+                f"  warning: {src_name} looks like Chinese speech but captions use English rules "
+                "(spaces between characters, 2-word cues, no Chinese font). "
+                "Re-run with --sub-lang zh-tw.",
+                file=sys.stderr,
+            )
+            warned_zh = True
         words_in_seg = _words_in_range(transcript, seg_start, seg_end)
 
-        for chunk in chunk_words(words_in_seg):
+        for chunk in lang["chunk"](words_in_seg):
             local_start = max(seg_start, chunk[0].get("start", seg_start))
             local_end = min(seg_end, chunk[-1].get("end", seg_end))
             out_start = max(0.0, local_start - seg_start) + seg_offset
             out_end = max(0.0, local_end - seg_start) + seg_offset
             if out_end <= out_start:
                 out_end = out_start + 0.4
-            text = " ".join((w.get("text") or "").strip() for w in chunk)
-            text = re.sub(r"\s+", " ", text).strip()
-            # Strip trailing punctuation for cleaner uppercase look
-            text = text.rstrip(",;:")
-            text = text.upper()
-            entries.append((out_start, out_end, text))
+            entries.append((out_start, out_end, lang["format"](chunk)))
 
         seg_offset += seg_duration
 
@@ -517,7 +639,7 @@ def build_master_srt(edl: dict, edit_dir: Path, out_path: Path) -> None:
         lines.append(f"{_srt_timestamp(a)} --> {_srt_timestamp(b)}")
         lines.append(t)
         lines.append("")
-    out_path.write_text("\n".join(lines))
+    out_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"master SRT → {out_path.name} ({len(entries)} cues)")
 
 
@@ -546,7 +668,9 @@ def measure_loudness(video_path: Path) -> dict[str, str] | None:
         "-af", filter_str,
         "-vn", "-f", "null", "-",
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    # stderr echoes the input path; decode as UTF-8 so a non-ASCII path does not
+    # fail decoding on Windows (which leaves proc.stderr as None)
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     # loudnorm prints the JSON to stderr at the end of the run
     stderr = proc.stderr
 
@@ -636,6 +760,7 @@ def build_final_composite(
     subtitles_path: Path | None,
     out_path: Path,
     edit_dir: Path,
+    sub_lang: str = "en",
 ) -> None:
     """Final pass: base → overlays (PTS-shifted) → subtitles LAST → out.
 
@@ -674,9 +799,11 @@ def build_final_composite(
 
     # Subtitles LAST — Rule 1
     if has_subs:
-        subs_abs = str(subtitles_path.resolve()).replace(":", r"\:").replace("'", r"\'")
+        # Forward slashes: the filter option parser treats backslashes as escapes,
+        # so a Windows path like C:\Users\... would lose its separators.
+        subs_abs = subtitles_path.resolve().as_posix().replace(":", r"\:").replace("'", r"\'")
         filter_parts.append(
-            f"{current}subtitles='{subs_abs}':force_style='{SUB_FORCE_STYLE}'[outv]"
+            f"{current}subtitles='{subs_abs}':force_style='{SUB_LANGS[sub_lang]['force_style']}'[outv]"
         )
         out_label = "[outv]"
     else:
@@ -729,6 +856,13 @@ def main() -> None:
         help="Build master.srt from transcripts + EDL offsets before compositing",
     )
     ap.add_argument(
+        "--sub-lang",
+        choices=sorted(SUB_LANGS),
+        default="en",
+        help="Caption rules and font: en (2-word UPPERCASE, Helvetica) or "
+             "zh-tw (width-capped Traditional Chinese cues, Microsoft JhengHei). Default: en.",
+    )
+    ap.add_argument(
         "--no-subtitles",
         action="store_true",
         help="Skip subtitles even if the EDL references one",
@@ -752,7 +886,7 @@ def main() -> None:
     if not edl_path.exists():
         sys.exit(f"edl not found: {edl_path}")
 
-    edl = json.loads(edl_path.read_text())
+    edl = json.loads(edl_path.read_text(encoding="utf-8"))
     edit_dir = edl_path.parent
     out_path = args.output.resolve()
 
@@ -776,7 +910,7 @@ def main() -> None:
     if not args.no_subtitles:
         if args.build_subtitles:
             subs_path = edit_dir / "master.srt"
-            build_master_srt(edl, edit_dir, subs_path)
+            build_master_srt(edl, edit_dir, subs_path, sub_lang=args.sub_lang)
         elif edl.get("subtitles"):
             subs_path = resolve_subtitles_path(edl["subtitles"], edit_dir)
 
@@ -784,11 +918,11 @@ def main() -> None:
     overlays = edl.get("overlays") or []
     if args.no_loudnorm:
         # Composite directly to final output
-        build_final_composite(base_path, overlays, subs_path, out_path, edit_dir)
+        build_final_composite(base_path, overlays, subs_path, out_path, edit_dir, sub_lang=args.sub_lang)
     else:
         # Composite to a temp file, then run loudnorm → final output
         tmp_composite = out_path.with_suffix(".prenorm.mp4")
-        build_final_composite(base_path, overlays, subs_path, tmp_composite, edit_dir)
+        build_final_composite(base_path, overlays, subs_path, tmp_composite, edit_dir, sub_lang=args.sub_lang)
         print("loudness normalization → social-ready (-14 LUFS / -1 dBTP / LRA 11)")
         apply_loudnorm_two_pass(tmp_composite, out_path, preview=args.draft)
         tmp_composite.unlink(missing_ok=True)

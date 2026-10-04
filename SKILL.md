@@ -75,7 +75,7 @@ Helpers (`helpers/transcribe.py`, `helpers/render.py`, etc.) live alongside this
 - **`transcribe_batch.py <videos_dir>`** — 4-worker parallel transcription. Use for multi-take.
 - **`pack_transcripts.py --edit-dir <dir>`** — `transcripts/*.json` → `takes_packed.md` (phrase-level, break on silence ≥ 0.5s).
 - **`timeline_view.py <video> <start> <end>`** — filmstrip + waveform PNG. On-demand visual drill-down. **Not a scan tool** — use it at decision points, not constantly.
-- **`render.py <edl.json> -o <out>`** — per-segment extract → concat → overlays (PTS-shifted) → subtitles LAST. `--preview` for 720p fast. `--build-subtitles` to generate master.srt inline.
+- **`render.py <edl.json> -o <out>`** — per-segment extract → concat → overlays (PTS-shifted) → subtitles LAST. `--preview` for 720p fast. `--build-subtitles` to generate master.srt inline. `--sub-lang en|zh-tw` picks caption rules and font (default `en`).
 - **`grade.py <in> -o <out>`** — ffmpeg filter chain grade. Presets + `--filter '<raw>'` for custom.
 
 For animations, create `<edit>/animations/slot_<id>/` with `Bash` and spawn a sub-agent via the `Agent` tool.
@@ -195,6 +195,10 @@ Alignment=2,MarginV=35
 ```
 
 **`natural-sentence`** (if you invent this mode) — narrative, documentary, education. 4–7 word chunks, sentence case, break on natural pauses, `MarginV=60–80`, larger font for readability, slightly wider max-width. No shipped force_style — design one if you need it.
+
+**`zh-tw`** — Traditional Chinese speech. Selected with `render.py --sub-lang zh-tw` (default `en` gives `bold-overlay`). Cues are measured in display width (CJK = 2, Latin = 1), capped at 28 (~14 characters); break on pauses ≥ 0.3s, or on punctuation once the cue has shown 0.8s. No spaces between Chinese words, one space next to Latin words (`用 Claude Code 剪片`). Trailing `，。、；：` dropped, `？！` kept, no uppercasing. Font: Microsoft JhengHei, otherwise the `bold-overlay` style (`SUB_FORCE_STYLE_ZH`).
+
+**Choosing the caption language.** Read it from the transcript (Scribe's `language_code`, or just the text), not from the user's chat language. State it in the strategy — e.g. "captions: Traditional Chinese, `zh-tw` style" — so the user confirms it in step 4. Pass `--sub-lang zh-tw` for Chinese speech; `render.py` warns on stderr if a Chinese transcript is rendered with English rules. `zh-tw` does **not** convert Simplified to Traditional — if Scribe returns Simplified characters, the captions are Simplified; tell the user.
 
 Invent a third style if neither fits. Hard rules: subtitles LAST (Rule 1), output-timeline offsets (Rule 5).
 
