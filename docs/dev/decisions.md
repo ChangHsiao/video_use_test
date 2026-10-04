@@ -13,3 +13,7 @@
 | 2026-10-04 | 自建 private repo 當 `origin`，官方 repo 設為 `upstream` | public repo 的 fork 不能設成 private | GitHub Fork |
 | 2026-10-04 | commit `uv.lock`（官方 repo 沒有） | 固定套件版本，讓 A/B test 的環境一致 | 不 commit，每次安裝最新版 |
 | 2026-10-04 | 採用七步工作流加上文件驅動開發（規格、計畫、決策紀錄） | 可以追溯決定的原因，Agent 也有執行依據 | 不寫文件；完整套用 superpowers 的流程 |
+| 2026-10-04 | 字幕語言由 Claude 看逐字稿決定並傳入 `--sub-lang`；render.py 只發出警告，不自動切換 | Claude 比程式更會判斷中英夾雜的影片；預設維持 `en`，不改變官方原本的行為 | render.py 依 `language_code` 自動切換 |
+| 2026-10-04 | Windows 相容性修正（UTF-8 編碼、字幕路徑改用正斜線）放在繁中字幕分支 | 以自己的專案進度為主；不修的話本機無法渲染，第二階段無法測試 | 另開規格和分支，方便以後送回官方 repo |
+| 2026-10-04 | 中文字幕測試另開新檔 `test_render_captions_zh.py` | 不改官方的測試檔，合併官方更新時比較不會衝突 | 加在 `test_render_captions.py` 裡 |
+| 2026-10-04 | 簡繁轉換（OpenCC）延後，等真影片實測後再決定 | Scribe 可能直接輸出繁體，先不增加套件依賴 | 一開始就加入 OpenCC |
