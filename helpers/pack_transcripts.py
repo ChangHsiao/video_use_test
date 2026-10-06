@@ -20,6 +20,10 @@ import json
 import sys
 from pathlib import Path
 
+# helpers/ is only on sys.path when this runs as a script; tests load it by file path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from zh_text import join_zh, looks_chinese, to_traditional  # noqa: E402
+
 
 def format_time(seconds: float) -> str:
     """Format a time in seconds as "NNN.NN" with fixed 6-char width for alignment."""
@@ -38,6 +42,7 @@ def format_duration(seconds: float) -> str:
 def group_into_phrases(
     words: list[dict],
     silence_threshold: float = 0.5,
+    zh: bool = False,
 ) -> list[dict]:
     """Walk a Scribe word list, break into phrases on silence >= threshold
     OR speaker change. Returns list of {start, end, text, speaker_id}.
@@ -45,6 +50,9 @@ def group_into_phrases(
     Scribe `words` entries have types 'word', 'spacing', or 'audio_event'.
     We keep 'word' and 'audio_event' content in phrase text. 'spacing'
     entries carry the silence information via their start/end times.
+
+    With zh=True, phrase text is joined without spaces between Chinese
+    characters and converted to Traditional Chinese (Taiwan).
     """
     phrases: list[dict] = []
     current_words: list[dict] = []
@@ -70,8 +78,11 @@ def group_into_phrases(
             current_start = None
             current_speaker = None
             return
-        text = " ".join(text_parts)
-        text = text.replace(" ,", ",").replace(" .", ".").replace(" ?", "?").replace(" !", "!")
+        if zh:
+            text = to_traditional(join_zh(text_parts))
+        else:
+            text = " ".join(text_parts)
+            text = text.replace(" ,", ",").replace(" .", ".").replace(" ?", "?").replace(" !", "!")
         end_time = current_words[-1].get("end", current_words[-1].get("start", current_start or 0.0))
         phrases.append({
             "start": current_start,
@@ -124,9 +135,9 @@ def group_into_phrases(
 
 def pack_one_file(json_path: Path, silence_threshold: float) -> tuple[str, float, list[dict]]:
     """Return (header_name, duration, phrases) for one transcript file."""
-    data = json.loads(json_path.read_text())
+    data = json.loads(json_path.read_text(encoding="utf-8"))
     words = data.get("words", [])
-    phrases = group_into_phrases(words, silence_threshold)
+    phrases = group_into_phrases(words, silence_threshold, zh=looks_chinese(data))
     if phrases:
         duration = phrases[-1]["end"] - phrases[0]["start"]
     else:

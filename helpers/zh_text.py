@@ -1,0 +1,110 @@
+"""Chinese text rules shared by render.py (captions) and pack_transcripts.py.
+
+Cue length is measured in display width (CJK and full-width punctuation
+count 2, everything else 1), since a Latin word inside Chinese speech should
+not count each letter as a full character.
+"""
+
+from __future__ import annotations
+
+import functools
+import logging
+import unicodedata
+import warnings
+
+
+ZH_PUNCT_BREAK = set("，。！？；：、,.!?;:")
+ZH_TRAILING_STRIP = "，。、；：,.;:"  # keep ？！ — they change the meaning
+
+
+def display_width(text: str) -> int:
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in text)
+
+
+def _is_latin(c: str) -> bool:
+    return c.isascii() and c.isalnum()
+
+
+def _is_cjk_punct(c: str) -> bool:
+    return unicodedata.category(c).startswith("P") and display_width(c) == 2
+
+
+def is_punct(text: str) -> bool:
+    """True if the token is punctuation only (Scribe gives "，" "。" their own token)."""
+    text = text.strip()
+    return bool(text) and all(unicodedata.category(c).startswith("P") for c in text)
+
+
+# jieba and OpenCC load on first use, so English-only runs never import them.
+@functools.cache
+def _jieba():
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)  # jieba 0.42 has invalid escapes in its regexes
+        import jieba
+    jieba.setLogLevel(logging.WARNING)  # silence "Building prefix dict..." on first cut
+    return jieba
+
+
+@functools.cache
+def _opencc():
+    import opencc
+    return opencc.OpenCC("s2twp")  # Simplified → Traditional, Taiwan wording (视频 → 影片)
+
+
+def word_boundaries(texts: list[str]) -> set[int]:
+    """Indices of tokens that end a word, so a cue may break after them.
+
+    The tokens are joined (a space beside Latin words, as in join_zh, so
+    "Claude" "Code" stay two words), cut into words with jieba, and token i
+    counts when its end lands on a word's end. The last token always does.
+    """
+    if not texts:
+        return set()
+    joined = ""
+    token_ends: list[int] = []
+    for t in texts:
+        t = t.strip()
+        if joined and t and (_is_latin(joined[-1]) or _is_latin(t[0])):
+            joined += " "
+        joined += t
+        token_ends.append(len(joined))
+    word_ends: set[int] = set()
+    pos = 0
+    for word in _jieba().lcut(joined):
+        pos += len(word)
+        word_ends.add(pos)
+    out = {i for i, end in enumerate(token_ends) if end in word_ends}
+    out.add(len(texts) - 1)
+    return out
+
+
+def to_traditional(text: str) -> str:
+    return _opencc().convert(text)
+
+
+def join_zh(texts: list[str]) -> str:
+    """Join Chinese tokens: no space between Chinese words, one space where
+    either neighbour is a Latin letter or digit ("用 Claude Code 剪片")."""
+    out = ""
+    for t in texts:
+        t = t.strip()
+        if not t:
+            continue
+        if out:
+            a, b = out[-1], t[0]
+            if (_is_latin(a) or _is_latin(b)) and not (_is_cjk_punct(a) or _is_cjk_punct(b)):
+                out += " "
+        out += t
+    return out
+
+
+def looks_chinese(transcript: dict) -> bool:
+    """True if Scribe tagged the transcript as Chinese, or most of its letters
+    are CJK ideographs. Used to warn when Chinese speech gets English rules."""
+    code = (transcript.get("language_code") or "").lower()
+    if code.startswith(("zh", "cmn", "yue")):
+        return True
+    text = "".join(w.get("text") or "" for w in transcript.get("words", []) if w.get("type") == "word")
+    letters = [c for c in text if c.isalpha()]
+    cjk = sum(1 for c in letters if "㐀" <= c <= "鿿")
+    return bool(letters) and cjk * 2 > len(letters)

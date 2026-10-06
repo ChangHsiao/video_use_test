@@ -10,6 +10,8 @@ dependencies = [
     "matplotlib",
     "pillow",
     "numpy",
+    "jieba>=0.42.1",
+    "opencc>=1.4.2",
 ]
 
 [project.optional-dependencies]

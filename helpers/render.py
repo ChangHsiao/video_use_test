@@ -26,7 +26,6 @@ import json
 import re
 import subprocess
 import sys
-import unicodedata
 from fractions import Fraction
 from pathlib import Path
 
@@ -38,6 +37,19 @@ except Exception:
 
     def auto_grade_for_clip(video, start=0.0, duration=None, verbose=False):  # type: ignore
         return "eq=contrast=1.03:saturation=0.98", {}
+
+# helpers/ is only on sys.path when render.py runs as a script; tests load it by file path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from zh_text import (  # noqa: E402
+    ZH_PUNCT_BREAK,
+    ZH_TRAILING_STRIP,
+    display_width,
+    is_punct,
+    join_zh,
+    looks_chinese,
+    to_traditional,
+    word_boundaries,
+)
 
 
 # -------- Subtitle style (bold-overlay, proven at 1920×1080 and 1080×1920) --
@@ -475,89 +487,54 @@ def _format_cue_en(chunk: list[dict]) -> str:
     return text.upper()
 
 
-# Traditional Chinese: cue length is measured in display width (CJK and
-# full-width punctuation count 2, everything else 1), since a Latin word inside
-# Chinese speech should not count each letter as a full character.
-ZH_PUNCT_BREAK = set("，。！？；：、,.!?;:")
-ZH_TRAILING_STRIP = "，。、；：,.;:"  # keep ？！ — they change the meaning
+# Traditional Chinese: text rules (display width, joining, punctuation) live in zh_text.py.
 ZH_CHUNK_MAX_WIDTH = 28   # about 14 Chinese characters per cue
 ZH_CHUNK_MIN_S = 0.8      # a punctuation-ended cue shorter than this merges on
-
-
-def display_width(text: str) -> int:
-    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in text)
-
-
-def _is_latin(c: str) -> bool:
-    return c.isascii() and c.isalnum()
-
-
-def _is_cjk_punct(c: str) -> bool:
-    return unicodedata.category(c).startswith("P") and display_width(c) == 2
-
-
-def join_zh(texts: list[str]) -> str:
-    """Join Chinese tokens: no space between Chinese words, one space where
-    either neighbour is a Latin letter or digit ("用 Claude Code 剪片")."""
-    out = ""
-    for t in texts:
-        t = t.strip()
-        if not t:
-            continue
-        if out:
-            a, b = out[-1], t[0]
-            if (_is_latin(a) or _is_latin(b)) and not (_is_cjk_punct(a) or _is_cjk_punct(b)):
-                out += " "
-        out += t
-    return out
 
 
 def chunk_words_zh(words: list[dict]) -> list[list[dict]]:
     """Group Chinese transcript words into caption cues.
 
-    A cue closes on a pause before the next word, or on punctuation once it has
-    been on screen for ZH_CHUNK_MIN_S (so a lone "好，" does not flash). Adding
-    a word that would push it past ZH_CHUNK_MAX_WIDTH starts a new cue.
+    Cues only break at word boundaries (jieba), since Scribe gives one token per
+    character and a pause can fall inside a word ("全 … 力"). A cue closes on a
+    pause after a word, or on punctuation once it has been on screen for
+    ZH_CHUNK_MIN_S (so a lone "好，" does not flash). A word that would push it
+    past ZH_CHUNK_MAX_WIDTH moves the cue's last whole words to a new cue.
+    Punctuation that would open a cue goes on the end of the previous one.
     """
     words = [w for w in words if (w.get("text") or "").strip()]
+    bounds = word_boundaries([w["text"] for w in words])
     chunks: list[list[dict]] = []
-    current: list[dict] = []
+    start = 0  # the open cue is words[start:i]
     for i, w in enumerate(words):
-        # measure the cue as it will be shown, without the trailing punctuation _format_cue_zh drops
-        candidate = join_zh([x["text"] for x in current + [w]]).rstrip(ZH_TRAILING_STRIP)
-        if current and display_width(candidate) > ZH_CHUNK_MAX_WIDTH:
-            chunks.append(current)
-            current = []
-        current.append(w)
         text = w["text"].strip()
+        if start == i and chunks and is_punct(text):
+            chunks[-1].append(w)
+            start = i + 1
+            continue
+        # measure the cue as it will be shown, without the trailing punctuation _format_cue_zh drops
+        while start < i and display_width(
+            join_zh([x["text"] for x in words[start:i + 1]]).rstrip(ZH_TRAILING_STRIP)
+        ) > ZH_CHUNK_MAX_WIDTH:
+            cut = next((k for k in range(i - 1, start - 1, -1) if k in bounds), i - 1)
+            chunks.append(words[start:cut + 1])
+            start = cut + 1
         nxt = words[i + 1] if i + 1 < len(words) else None
         gap = (nxt["start"] - w["end"]) if nxt else 0.0
-        dur = w["end"] - current[0]["start"]
+        dur = w["end"] - words[start]["start"]
         if (
             nxt is None
-            or gap >= CHUNK_PAUSE_S
+            or (gap >= CHUNK_PAUSE_S and i in bounds)
             or (text[-1] in ZH_PUNCT_BREAK and dur >= ZH_CHUNK_MIN_S)
         ):
-            chunks.append(current)
-            current = []
+            chunks.append(words[start:i + 1])
+            start = i + 1
     return chunks
 
 
 def _format_cue_zh(chunk: list[dict]) -> str:
     text = join_zh([w.get("text") or "" for w in chunk])
-    return text.rstrip(ZH_TRAILING_STRIP)
-
-
-def looks_chinese(transcript: dict) -> bool:
-    """True if Scribe tagged the transcript as Chinese, or most of its letters
-    are CJK ideographs. Used to warn when Chinese speech gets English rules."""
-    code = (transcript.get("language_code") or "").lower()
-    if code.startswith(("zh", "cmn", "yue")):
-        return True
-    text = "".join(w.get("text") or "" for w in transcript.get("words", []) if w.get("type") == "word")
-    letters = [c for c in text if c.isalpha()]
-    cjk = sum(1 for c in letters if "㐀" <= c <= "鿿")
-    return bool(letters) and cjk * 2 > len(letters)
+    return to_traditional(text.rstrip(ZH_TRAILING_STRIP))
 
 
 # Same look as the English style, in a face that has Chinese glyphs
