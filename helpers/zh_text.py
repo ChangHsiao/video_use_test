@@ -9,12 +9,18 @@ from __future__ import annotations
 
 import functools
 import logging
+import re
 import unicodedata
 import warnings
 
 
 ZH_PUNCT_BREAK = set("，。！？；：、,.!?;:")
 ZH_TRAILING_STRIP = "，。、；：,.;:"  # keep ？！ — they change the meaning
+# 句中的停頓標點換成 En space（約半個字寬）：全形空格太開、一般空格太窄，
+# 兩個半形空格又可能被播放器合併成一個（2026-10-09 比較過）
+ZH_INNER_SEP = " "
+# 中文停頓標點；英文的 ,;: 夾在兩個數字中間時（1,000、10:30）不算
+_INNER_PUNCT = re.compile(r"\s*(?:[，、；：。]|(?<!\d)[,;:]|[,;:](?!\d))\s*")
 
 
 def display_width(text: str) -> int:
@@ -76,6 +82,23 @@ def word_boundaries(texts: list[str]) -> set[int]:
     out = {i for i, end in enumerate(token_ends) if end in word_ends}
     out.add(len(texts) - 1)
     return out
+
+
+def is_number(text: str) -> bool:
+    """數字 token（100、95、3.5、1,000），斷句時不和後面的單位拆開。"""
+    text = text.strip()
+    return any(c.isdigit() for c in text) and all(c.isdigit() or c in ".,%" for c in text)
+
+
+def starts_cjk(text: str) -> bool:
+    """token 是否以中文字開頭（不含標點）。"""
+    text = text.strip()
+    return bool(text) and display_width(text[0]) == 2 and not is_punct(text[0])
+
+
+def inner_punct_to_space(text: str) -> str:
+    """句中的停頓標點換成 En space，前後原有的空格一併去掉；？！ 保留。"""
+    return _INNER_PUNCT.sub(ZH_INNER_SEP, text)
 
 
 def to_traditional(text: str) -> str:

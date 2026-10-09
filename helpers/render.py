@@ -44,9 +44,12 @@ from zh_text import (  # noqa: E402
     ZH_PUNCT_BREAK,
     ZH_TRAILING_STRIP,
     display_width,
+    inner_punct_to_space,
+    is_number,
     is_punct,
     join_zh,
     looks_chinese,
+    starts_cjk,
     to_traditional,
     word_boundaries,
 )
@@ -157,6 +160,20 @@ def is_hdr_source(video: Path) -> bool:
         return out.stdout.strip() in HDR_TRANSFERS
     except subprocess.CalledProcessError:
         return False
+
+
+def probe_dimensions(video: Path) -> tuple[int, int] | None:
+    """Width and height of a rendered video's first stream, or None if ffprobe fails."""
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=width,height", "-of", "json", str(video)],
+            capture_output=True, text=True, check=True,
+        )
+        stream = (json.loads(out.stdout).get("streams") or [{}])[0]
+        return int(stream["width"]), int(stream["height"])
+    except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError, ValueError, FileNotFoundError):
+        return None
 
 
 def is_portrait_source(video: Path) -> bool:
@@ -488,19 +505,153 @@ def _format_cue_en(chunk: list[dict]) -> str:
 
 
 # Traditional Chinese: text rules (display width, joining, punctuation) live in zh_text.py.
-ZH_CHUNK_MAX_WIDTH = 28   # about 14 Chinese characters per cue
-ZH_CHUNK_MIN_S = 0.8      # a punctuation-ended cue shorter than this merges on
+ZH_CHUNK_MAX_WIDTH = 28   # about 14 Chinese characters per cue on a landscape frame
+ZH_CHUNK_MIN_S = 0.8      # a cue shorter than this merges into a neighbour
+ZH_MERGE_MAX_GAP_S = 1.0  # ...unless the silence between them is longer than this
+ZH_CUT_PAUSE_S = 0.15     # a gap this long makes a better place to split an over-long cue
+ZH_SENTENCE_END = "。？！?!"  # always closes a cue; a short result is fixed by _merge_short_cues
+ZH_MIN_VISIBLE_S = 0.2    # a cue still shorter than this (after merging and clamping) is dropped
 
 
-def chunk_words_zh(words: list[dict]) -> list[list[dict]]:
+def zh_max_width(width: int, height: int) -> int:
+    """Cue width cap that fits one caption line on a width×height frame.
+
+    libass scales FontSize=18 against PlayResY=288, and a CJK glyph in the zh-tw
+    style is about 0.75 of the font height wide (measured ~90 px at 1080×1920).
+    One character of slack; never above the landscape cap ZH_CHUNK_MAX_WIDTH.
+    1080×1920 → 20 (10 characters), 1920×1080 → 28.
+    """
+    char_px = 0.75 * 18 * height / 288
+    per_line = int(width * 0.95 // char_px) - 1
+    return max(8, min(ZH_CHUNK_MAX_WIDTH, 2 * per_line))
+
+
+def _cue_width(words: list[dict]) -> int:
+    # measure the cue as it will be shown, without the trailing punctuation _format_cue_zh drops
+    return display_width(join_zh([x["text"] for x in words]).rstrip(ZH_TRAILING_STRIP))
+
+
+def _speaker_changes(a: dict, b: dict) -> bool:
+    sa, sb = a.get("speaker_id"), b.get("speaker_id")
+    return sa is not None and sb is not None and sa != sb
+
+
+def _pick_cut(words: list[dict], start: int, i: int, bounds: set[int], max_width: int) -> int:
+    """Where to end the cue words[start:i+1] that ran past max_width.
+
+    Prefer a cut after punctuation, then at a pause, then the latest word
+    boundary that fits. Never cut right before punctuation (it would open the
+    next cue) or between a number and its unit ("100 | 分").
+    """
+    best: tuple[tuple[bool, bool, int], int] | None = None
+    for k in range(start, i):
+        if k not in bounds or _cue_width(words[start:k + 1]) > max_width:
+            continue
+        nxt = words[k + 1]["text"]
+        if is_punct(nxt) or (is_number(words[k]["text"]) and starts_cjk(nxt)):
+            continue
+        key = (
+            words[k]["text"].strip()[-1] in ZH_PUNCT_BREAK,
+            words[k + 1]["start"] - words[k]["end"] >= ZH_CUT_PAUSE_S,
+            k,
+        )
+        if best is None or key > best[0]:
+            best = (key, k)
+    if best is not None:
+        return best[1]
+    return next((k for k in range(i - 1, start - 1, -1) if k in bounds), i - 1)
+
+
+def _cue_dur(c: list[dict]) -> float:
+    return c[-1]["end"] - c[0]["start"]
+
+
+def _ends_with(c: list[dict], marks: str | set[str]) -> bool:
+    return c[-1]["text"].strip()[-1] in marks
+
+
+def _rebalance(prev: list[dict], c: list[dict], max_width: int) -> tuple[list[dict], list[dict]] | None:
+    """Move the end of prev onto the short cue c so both last ZH_CHUNK_MIN_S.
+
+    Used when prev was cut mid-sentence by the width cap and left a short tail
+    ("…自己的 | 生理上嗎？" → "…反映在 | 自己的生理上嗎？"). Prefers a cut after
+    punctuation, then at a pause, then the most even split — the cut that
+    moves the fewest words tends to start the tail on a particle ("的生理上嗎").
+    """
+    both = prev + c
+    bounds = word_boundaries([w["text"] for w in both])
+    best: tuple[tuple[bool, bool, int], int] | None = None
+    for k in range(len(prev) - 1):
+        left, right = both[:k + 1], both[k + 1:]
+        if k not in bounds or is_punct(right[0]["text"]):
+            continue
+        if is_number(both[k]["text"]) and starts_cjk(right[0]["text"]):
+            continue
+        if _cue_width(left) > max_width or _cue_width(right) > max_width:
+            continue
+        if _cue_dur(left) < ZH_CHUNK_MIN_S or _cue_dur(right) < ZH_CHUNK_MIN_S:
+            continue
+        key = (
+            _ends_with(left, ZH_PUNCT_BREAK),
+            right[0]["start"] - left[-1]["end"] >= ZH_CUT_PAUSE_S,
+            -abs(_cue_width(left) - _cue_width(right)),
+        )
+        if best is None or key > best[0]:
+            best = (key, k)
+    if best is None:
+        return None
+    return both[:best[1] + 1], both[best[1] + 1:]
+
+
+def _merge_short_cues(chunks: list[list[dict]], max_width: int) -> list[list[dict]]:
+    """Fix cues shown for less than ZH_CHUNK_MIN_S, when the neighbour has the
+    same speaker and the silence between them is short:
+
+    - prev was cut mid-sentence (no punctuation at its end): merge into it if
+      the result fits, else move words from prev's end onto the short cue
+    - prev ends a clause ("，") but not a sentence ("。？！"): merge into it
+    - otherwise merge into the next cue if the result fits; else keep it
+    """
+    def joinable(a: list[dict], b: list[dict]) -> bool:
+        return not _speaker_changes(a[-1], b[0]) and b[0]["start"] - a[-1]["end"] <= ZH_MERGE_MAX_GAP_S
+
+    pending = list(chunks)
+    out: list[list[dict]] = []
+    for idx, c in enumerate(pending):
+        if _cue_dur(c) < ZH_CHUNK_MIN_S:
+            prev = out[-1] if out else None
+            if prev and joinable(prev, c):
+                fits = _cue_width(prev + c) <= max_width
+                if not _ends_with(prev, ZH_PUNCT_BREAK):
+                    if fits:
+                        out[-1] = prev + c
+                        continue
+                    pair = _rebalance(prev, c, max_width)
+                    if pair:
+                        out[-1] = pair[0]
+                        out.append(pair[1])
+                        continue
+                elif not _ends_with(prev, ZH_SENTENCE_END) and fits:
+                    out[-1] = prev + c
+                    continue
+            nxt = pending[idx + 1] if idx + 1 < len(pending) else None
+            if nxt and joinable(c, nxt) and _cue_width(c + nxt) <= max_width:
+                pending[idx + 1] = c + nxt
+                continue
+        out.append(c)
+    return out
+
+
+def chunk_words_zh(words: list[dict], max_width: int = ZH_CHUNK_MAX_WIDTH) -> list[list[dict]]:
     """Group Chinese transcript words into caption cues.
 
     Cues only break at word boundaries (jieba), since Scribe gives one token per
     character and a pause can fall inside a word ("全 … 力"). A cue closes on a
-    pause after a word, or on punctuation once it has been on screen for
-    ZH_CHUNK_MIN_S (so a lone "好，" does not flash). A word that would push it
-    past ZH_CHUNK_MAX_WIDTH moves the cue's last whole words to a new cue.
-    Punctuation that would open a cue goes on the end of the previous one.
+    pause after a word, on a change of speaker, or on punctuation once it has
+    been on screen for ZH_CHUNK_MIN_S (so a lone "好，" does not flash). A cue
+    that runs past max_width is split at the best point (_pick_cut).
+    Punctuation that would open a cue goes on the end of the previous one, and
+    cues still shorter than ZH_CHUNK_MIN_S merge into a neighbour.
     """
     words = [w for w in words if (w.get("text") or "").strip()]
     bounds = word_boundaries([w["text"] for w in words])
@@ -512,11 +663,8 @@ def chunk_words_zh(words: list[dict]) -> list[list[dict]]:
             chunks[-1].append(w)
             start = i + 1
             continue
-        # measure the cue as it will be shown, without the trailing punctuation _format_cue_zh drops
-        while start < i and display_width(
-            join_zh([x["text"] for x in words[start:i + 1]]).rstrip(ZH_TRAILING_STRIP)
-        ) > ZH_CHUNK_MAX_WIDTH:
-            cut = next((k for k in range(i - 1, start - 1, -1) if k in bounds), i - 1)
+        while start < i and _cue_width(words[start:i + 1]) > max_width:
+            cut = _pick_cut(words, start, i, bounds, max_width)
             chunks.append(words[start:cut + 1])
             start = cut + 1
         nxt = words[i + 1] if i + 1 < len(words) else None
@@ -524,17 +672,21 @@ def chunk_words_zh(words: list[dict]) -> list[list[dict]]:
         dur = w["end"] - words[start]["start"]
         if (
             nxt is None
+            or _speaker_changes(w, nxt)
             or (gap >= CHUNK_PAUSE_S and i in bounds)
+            or text[-1] in ZH_SENTENCE_END
             or (text[-1] in ZH_PUNCT_BREAK and dur >= ZH_CHUNK_MIN_S)
         ):
             chunks.append(words[start:i + 1])
             start = i + 1
-    return chunks
+    return _merge_short_cues(chunks, max_width)
 
 
 def _format_cue_zh(chunk: list[dict]) -> str:
     text = join_zh([w.get("text") or "" for w in chunk])
-    return to_traditional(text.rstrip(ZH_TRAILING_STRIP))
+    # a cut can carry the previous sentence's "，" into this cue's first word
+    text = text.lstrip("".join(ZH_PUNCT_BREAK) + " ").rstrip(ZH_TRAILING_STRIP)
+    return to_traditional(inner_punct_to_space(text))
 
 
 # Same look as the English style, in a face that has Chinese glyphs
@@ -558,15 +710,22 @@ SUB_LANGS = {
 }
 
 
-def build_master_srt(edl: dict, edit_dir: Path, out_path: Path, sub_lang: str = "en") -> None:
+def build_master_srt(
+    edl: dict, edit_dir: Path, out_path: Path, sub_lang: str = "en", max_width: int | None = None
+) -> None:
     """Build an output-timeline SRT from per-source transcripts.
 
     - chunking and text rules from SUB_LANGS[sub_lang]: "en" is phrase-aware
       ~2-word UPPERCASE chunks (chunk_words), "zh-tw" is width-capped Chinese
       cues (chunk_words_zh)
+    - max_width: zh-tw cue width cap (see zh_max_width); None keeps ZH_CHUNK_MAX_WIDTH
     - Output times computed as word.start - segment_start + segment_offset
     """
     lang = SUB_LANGS[sub_lang]
+    chunk_fn = lang["chunk"]
+    if sub_lang == "zh-tw":
+        cap = max_width or ZH_CHUNK_MAX_WIDTH
+        chunk_fn = lambda ws: chunk_words_zh(ws, max_width=cap)  # noqa: E731
     transcripts_dir = edit_dir / "transcripts"
     sources = edl["sources"]
 
@@ -597,7 +756,7 @@ def build_master_srt(edl: dict, edit_dir: Path, out_path: Path, sub_lang: str = 
             warned_zh = True
         words_in_seg = _words_in_range(transcript, seg_start, seg_end)
 
-        for chunk in lang["chunk"](words_in_seg):
+        for chunk in chunk_fn(words_in_seg):
             local_start = max(seg_start, chunk[0].get("start", seg_start))
             local_end = min(seg_end, chunk[-1].get("end", seg_end))
             out_start = max(0.0, local_start - seg_start) + seg_offset
@@ -610,6 +769,17 @@ def build_master_srt(edl: dict, edit_dir: Path, out_path: Path, sub_lang: str = 
 
     # Sort and write as SRT
     entries.sort(key=lambda e: e[0])
+    if sub_lang == "zh-tw":
+        # A zero-length word gets a 0.4 s cue above; never let it run into the
+        # next cue, or both are on screen at once, stacked. A cue left shorter
+        # than ZH_MIN_VISIBLE_S (a backchannel "嗯" right before the other
+        # speaker, a quick "對，" that could not merge) would only flicker, so
+        # it is dropped.
+        entries = [
+            (a, min(b, entries[i + 1][0]) if i + 1 < len(entries) and entries[i + 1][0] > a else b, t)
+            for i, (a, b, t) in enumerate(entries)
+        ]
+        entries = [e for e in entries if e[1] - e[0] >= ZH_MIN_VISIBLE_S]
     lines: list[str] = []
     for i, (a, b, t) in enumerate(entries, start=1):
         lines.append(str(i))
@@ -840,6 +1010,14 @@ def main() -> None:
              "zh-tw (width-capped Traditional Chinese cues, Microsoft JhengHei). Default: en.",
     )
     ap.add_argument(
+        "--sub-max-chars",
+        type=int,
+        default=None,
+        help="zh-tw only: max Chinese characters per caption cue. Default: computed from the "
+             "rendered frame (about 14 on 16:9, 10 on 9:16). Pass it when the frame is cropped "
+             "after render.py, e.g. per-shot vertical reframing of a 16:9 render.",
+    )
+    ap.add_argument(
         "--no-subtitles",
         action="store_true",
         help="Skip subtitles even if the EDL references one",
@@ -887,7 +1065,15 @@ def main() -> None:
     if not args.no_subtitles:
         if args.build_subtitles:
             subs_path = edit_dir / "master.srt"
-            build_master_srt(edl, edit_dir, subs_path, sub_lang=args.sub_lang)
+            max_width = None
+            if args.sub_lang == "zh-tw":
+                if args.sub_max_chars:
+                    max_width = 2 * args.sub_max_chars
+                else:
+                    dims = probe_dimensions(base_path)
+                    max_width = zh_max_width(*dims) if dims else None
+                print(f"zh-tw caption cap: {(max_width or ZH_CHUNK_MAX_WIDTH) // 2} characters per cue")
+            build_master_srt(edl, edit_dir, subs_path, sub_lang=args.sub_lang, max_width=max_width)
         elif edl.get("subtitles"):
             subs_path = resolve_subtitles_path(edl["subtitles"], edit_dir)
 
