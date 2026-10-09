@@ -22,7 +22,7 @@ from pathlib import Path
 
 # helpers/ is only on sys.path when this runs as a script; tests load it by file path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from zh_text import join_zh, looks_chinese, to_traditional  # noqa: E402
+from zh_text import join_zh, to_traditional, transcript_lang  # noqa: E402
 
 
 def format_time(seconds: float) -> str:
@@ -42,7 +42,7 @@ def format_duration(seconds: float) -> str:
 def group_into_phrases(
     words: list[dict],
     silence_threshold: float = 0.5,
-    zh: bool = False,
+    lang: str | None = None,
 ) -> list[dict]:
     """Walk a Scribe word list, break into phrases on silence >= threshold
     OR speaker change. Returns list of {start, end, text, speaker_id}.
@@ -51,8 +51,9 @@ def group_into_phrases(
     We keep 'word' and 'audio_event' content in phrase text. 'spacing'
     entries carry the silence information via their start/end times.
 
-    With zh=True, phrase text is joined without spaces between Chinese
+    With lang="zh", phrase text is joined without spaces between Chinese
     characters and converted to Traditional Chinese (Taiwan).
+    lang="ja"：同樣不加空格，但不做簡繁轉換。
     """
     phrases: list[dict] = []
     current_words: list[dict] = []
@@ -78,8 +79,10 @@ def group_into_phrases(
             current_start = None
             current_speaker = None
             return
-        if zh:
+        if lang == "zh":
             text = to_traditional(join_zh(text_parts))
+        elif lang == "ja":
+            text = join_zh(text_parts, space_digits=False)
         else:
             text = " ".join(text_parts)
             text = text.replace(" ,", ",").replace(" .", ".").replace(" ?", "?").replace(" !", "!")
@@ -137,7 +140,7 @@ def pack_one_file(json_path: Path, silence_threshold: float) -> tuple[str, float
     """Return (header_name, duration, phrases) for one transcript file."""
     data = json.loads(json_path.read_text(encoding="utf-8"))
     words = data.get("words", [])
-    phrases = group_into_phrases(words, silence_threshold, zh=looks_chinese(data))
+    phrases = group_into_phrases(words, silence_threshold, lang=transcript_lang(data))
     if phrases:
         duration = phrases[-1]["end"] - phrases[0]["start"]
     else:

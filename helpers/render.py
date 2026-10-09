@@ -51,6 +51,7 @@ from zh_text import (  # noqa: E402
     looks_chinese,
     starts_cjk,
     to_traditional,
+    transcript_lang,
     word_boundaries,
 )
 
@@ -511,6 +512,7 @@ ZH_MERGE_MAX_GAP_S = 1.0  # ...unless the silence between them is longer than th
 ZH_CUT_PAUSE_S = 0.15     # a gap this long makes a better place to split an over-long cue
 ZH_SENTENCE_END = "。？！?!"  # always closes a cue; a short result is fixed by _merge_short_cues
 ZH_MIN_VISIBLE_S = 0.2    # a cue still shorter than this (after merging and clamping) is dropped
+ZH_BORROW_ROOM_S = 0.3    # 短句到下一句開始不到這麼久時，向下一句借字（見 _merge_short_cues）
 
 
 def zh_max_width(width: int, height: int) -> int:
@@ -570,18 +572,27 @@ def _ends_with(c: list[dict], marks: str | set[str]) -> bool:
     return c[-1]["text"].strip()[-1] in marks
 
 
-def _rebalance(prev: list[dict], c: list[dict], max_width: int) -> tuple[list[dict], list[dict]] | None:
+def _rebalance(
+    prev: list[dict], c: list[dict], max_width: int, lang: str = "zh", forward: bool = False
+) -> tuple[list[dict], list[dict]] | None:
     """Move the end of prev onto the short cue c so both last ZH_CHUNK_MIN_S.
 
     Used when prev was cut mid-sentence by the width cap and left a short tail
     ("…自己的 | 生理上嗎？" → "…反映在 | 自己的生理上嗎？"). Prefers a cut after
     punctuation, then at a pause, then the most even split — the cut that
     moves the fewest words tends to start the tail on a particle ("的生理上嗎").
+
+    forward=True：反過來，prev 是太短的句子，從後一句 c 的開頭借字過來
+    （「いや、 | リンさんも頑張ってください」→「いや、リンさんも | 頑張ってください」）。
+    後面沒有空白能延長時才用，所以兩句只要求看得到（ZH_MIN_VISIBLE_S），
+    能都滿 ZH_CHUNK_MIN_S 的切法優先。
     """
     both = prev + c
-    bounds = word_boundaries([w["text"] for w in both])
-    best: tuple[tuple[bool, bool, int], int] | None = None
-    for k in range(len(prev) - 1):
+    bounds = word_boundaries([w["text"] for w in both], lang)
+    min_dur = ZH_MIN_VISIBLE_S if forward else ZH_CHUNK_MIN_S
+    cuts = range(len(prev), len(both) - 1) if forward else range(len(prev) - 1)
+    best: tuple[tuple[bool, bool, bool, int], int] | None = None
+    for k in cuts:
         left, right = both[:k + 1], both[k + 1:]
         if k not in bounds or is_punct(right[0]["text"]):
             continue
@@ -589,9 +600,10 @@ def _rebalance(prev: list[dict], c: list[dict], max_width: int) -> tuple[list[di
             continue
         if _cue_width(left) > max_width or _cue_width(right) > max_width:
             continue
-        if _cue_dur(left) < ZH_CHUNK_MIN_S or _cue_dur(right) < ZH_CHUNK_MIN_S:
+        if _cue_dur(left) < min_dur or _cue_dur(right) < min_dur:
             continue
         key = (
+            min(_cue_dur(left), _cue_dur(right)) >= ZH_CHUNK_MIN_S,
             _ends_with(left, ZH_PUNCT_BREAK),
             right[0]["start"] - left[-1]["end"] >= ZH_CUT_PAUSE_S,
             -abs(_cue_width(left) - _cue_width(right)),
@@ -603,14 +615,16 @@ def _rebalance(prev: list[dict], c: list[dict], max_width: int) -> tuple[list[di
     return both[:best[1] + 1], both[best[1] + 1:]
 
 
-def _merge_short_cues(chunks: list[list[dict]], max_width: int) -> list[list[dict]]:
+def _merge_short_cues(chunks: list[list[dict]], max_width: int, lang: str = "zh") -> list[list[dict]]:
     """Fix cues shown for less than ZH_CHUNK_MIN_S, when the neighbour has the
     same speaker and the silence between them is short:
 
     - prev was cut mid-sentence (no punctuation at its end): merge into it if
       the result fits, else move words from prev's end onto the short cue
     - prev ends a clause ("，") but not a sentence ("。？！"): merge into it
-    - otherwise merge into the next cue if the result fits; else keep it
+    - otherwise merge into the next cue if the result fits
+    - 合併不下、後面又沒有空白能延長顯示時間時：從下一句的開頭借字（forward rebalance）
+    - else keep it; build_master_srt then stretches it into the silence after it
     """
     def joinable(a: list[dict], b: list[dict]) -> bool:
         return not _speaker_changes(a[-1], b[0]) and b[0]["start"] - a[-1]["end"] <= ZH_MERGE_MAX_GAP_S
@@ -626,7 +640,7 @@ def _merge_short_cues(chunks: list[list[dict]], max_width: int) -> list[list[dic
                     if fits:
                         out[-1] = prev + c
                         continue
-                    pair = _rebalance(prev, c, max_width)
+                    pair = _rebalance(prev, c, max_width, lang)
                     if pair:
                         out[-1] = pair[0]
                         out.append(pair[1])
@@ -638,11 +652,21 @@ def _merge_short_cues(chunks: list[list[dict]], max_width: int) -> list[list[dic
             if nxt and joinable(c, nxt) and _cue_width(c + nxt) <= max_width:
                 pending[idx + 1] = c + nxt
                 continue
+            # 下一句幾乎馬上接上，延長也只能閃一下（「いや、」0.22 秒、被壓成 0 秒的
+            # 「確かに。」）：向下一句借字，不然會被拿掉。有 0.3 秒以上就照舊顯示，
+            # 借字反而會在句尾留下「…，但」「…，所以」
+            room = nxt[0]["start"] - c[0]["start"] if nxt else 0.0
+            if nxt and joinable(c, nxt) and room < ZH_BORROW_ROOM_S:
+                pair = _rebalance(c, nxt, max_width, lang, forward=True)
+                if pair:
+                    out.append(pair[0])
+                    pending[idx + 1] = pair[1]
+                    continue
         out.append(c)
     return out
 
 
-def chunk_words_zh(words: list[dict], max_width: int = ZH_CHUNK_MAX_WIDTH) -> list[list[dict]]:
+def chunk_words_zh(words: list[dict], max_width: int = ZH_CHUNK_MAX_WIDTH, lang: str = "zh") -> list[list[dict]]:
     """Group Chinese transcript words into caption cues.
 
     Cues only break at word boundaries (jieba), since Scribe gives one token per
@@ -652,9 +676,10 @@ def chunk_words_zh(words: list[dict], max_width: int = ZH_CHUNK_MAX_WIDTH) -> li
     that runs past max_width is split at the best point (_pick_cut).
     Punctuation that would open a cue goes on the end of the previous one, and
     cues still shorter than ZH_CHUNK_MIN_S merge into a neighbour.
+    lang="ja"：規則相同，只是「詞」改成 BudouX 的文節（見 chunk_words_ja）。
     """
     words = [w for w in words if (w.get("text") or "").strip()]
-    bounds = word_boundaries([w["text"] for w in words])
+    bounds = word_boundaries([w["text"] for w in words], lang)
     chunks: list[list[dict]] = []
     start = 0  # the open cue is words[start:i]
     for i, w in enumerate(words):
@@ -679,14 +704,30 @@ def chunk_words_zh(words: list[dict], max_width: int = ZH_CHUNK_MAX_WIDTH) -> li
         ):
             chunks.append(words[start:i + 1])
             start = i + 1
-    return _merge_short_cues(chunks, max_width)
+    return _merge_short_cues(chunks, max_width, lang)
+
+
+def chunk_words_ja(words: list[dict], max_width: int = ZH_CHUNK_MAX_WIDTH) -> list[list[dict]]:
+    """日文字幕：和中文同一套規則（字寬上限、標點和停頓優先、說話者換人斷句、
+    短句合併），只在 BudouX 的文節邊界切開（終章の | 朗読劇の | 前に）。"""
+    return chunk_words_zh(words, max_width, lang="ja")
+
+
+def _cue_text_cjk(chunk: list[dict], space_digits: bool = True) -> str:
+    text = join_zh([w.get("text") or "" for w in chunk], space_digits)
+    # a cut can carry the previous sentence's "，" into this cue's first word
+    text = text.lstrip("".join(ZH_PUNCT_BREAK) + " ").rstrip(ZH_TRAILING_STRIP)
+    return inner_punct_to_space(text)
 
 
 def _format_cue_zh(chunk: list[dict]) -> str:
-    text = join_zh([w.get("text") or "" for w in chunk])
-    # a cut can carry the previous sentence's "，" into this cue's first word
-    text = text.lstrip("".join(ZH_PUNCT_BREAK) + " ").rstrip(ZH_TRAILING_STRIP)
-    return to_traditional(inner_punct_to_space(text))
+    return to_traditional(_cue_text_cjk(chunk))
+
+
+def _format_cue_ja(chunk: list[dict]) -> str:
+    # 和中文相同的標點處理（日本電視字幕也常用空白代替句中標點），但不轉繁體、
+    # 數字兩邊不加空格
+    return _cue_text_cjk(chunk, space_digits=False)
 
 
 # Same look as the English style, in a face that has Chinese glyphs
@@ -694,20 +735,53 @@ def _format_cue_zh(chunk: list[dict]) -> str:
 SUB_FORCE_STYLE_ZH = SUB_FORCE_STYLE.replace("FontName=Helvetica", "FontName=Microsoft JhengHei")
 
 
+def ja_default_font(platform: str = sys.platform) -> str:
+    """各作業系統內建、有日文字形的字型；用 --sub-font 可以換掉。"""
+    if platform == "win32":
+        return "Yu Gothic"
+    if platform == "darwin":
+        return "Hiragino Sans"
+    return "Noto Sans CJK JP"
+
+
+SUB_FORCE_STYLE_JA = SUB_FORCE_STYLE.replace("FontName=Helvetica", f"FontName={ja_default_font()}")
+
+
 # Per-language caption rules: how words group into cues, how a cue's words
 # become text, and the libass style used when burning. Selected by --sub-lang.
+# "cjk": 不加空格、用字寬計算的語言，共用字寬上限（依畫面寬度）、不重疊、
+# 拿掉太短句子這些規則。
 SUB_LANGS = {
     "en": {
         "chunk": chunk_words,
         "format": _format_cue_en,
         "force_style": SUB_FORCE_STYLE,
+        "cjk": False,
     },
     "zh-tw": {
         "chunk": chunk_words_zh,
         "format": _format_cue_zh,
         "force_style": SUB_FORCE_STYLE_ZH,
+        "cjk": True,
+    },
+    "ja": {
+        "chunk": chunk_words_ja,
+        "format": _format_cue_ja,
+        "force_style": SUB_FORCE_STYLE_JA,
+        "cjk": True,
     },
 }
+
+# 逐字稿語言 → 建議的 --sub-lang（en 規則遇到這些語言時發出警告）
+SUB_LANG_FOR = {"zh": "zh-tw", "ja": "ja"}
+
+
+def sub_force_style(sub_lang: str, font: str | None = None) -> str:
+    """該語言燒字幕用的樣式；font（--sub-font）會換掉預設字型。"""
+    style = SUB_LANGS[sub_lang]["force_style"]
+    if font:
+        style = re.sub(r"FontName=[^,]*", f"FontName={font}", style)
+    return style
 
 
 def build_master_srt(
@@ -717,15 +791,16 @@ def build_master_srt(
 
     - chunking and text rules from SUB_LANGS[sub_lang]: "en" is phrase-aware
       ~2-word UPPERCASE chunks (chunk_words), "zh-tw" is width-capped Chinese
-      cues (chunk_words_zh)
-    - max_width: zh-tw cue width cap (see zh_max_width); None keeps ZH_CHUNK_MAX_WIDTH
+      cues (chunk_words_zh), "ja" the same rules on BudouX phrases (chunk_words_ja)
+    - max_width: zh-tw / ja cue width cap (see zh_max_width); None keeps ZH_CHUNK_MAX_WIDTH
     - Output times computed as word.start - segment_start + segment_offset
     """
     lang = SUB_LANGS[sub_lang]
     chunk_fn = lang["chunk"]
-    if sub_lang == "zh-tw":
+    if lang["cjk"]:
         cap = max_width or ZH_CHUNK_MAX_WIDTH
-        chunk_fn = lambda ws: chunk_words_zh(ws, max_width=cap)  # noqa: E731
+        base_chunk = lang["chunk"]
+        chunk_fn = lambda ws: base_chunk(ws, max_width=cap)  # noqa: E731
     transcripts_dir = edit_dir / "transcripts"
     sources = edl["sources"]
 
@@ -746,11 +821,13 @@ def build_master_srt(
             continue
 
         transcript = json.loads(tr_path.read_text(encoding="utf-8"))
-        if sub_lang == "en" and not warned_zh and looks_chinese(transcript):
+        speech = transcript_lang(transcript) if sub_lang == "en" and not warned_zh else None
+        if speech in SUB_LANG_FOR:
+            name = {"zh": "Chinese", "ja": "Japanese"}[speech]
             print(
-                f"  warning: {src_name} looks like Chinese speech but captions use English rules "
-                "(spaces between characters, 2-word cues, no Chinese font). "
-                "Re-run with --sub-lang zh-tw.",
+                f"  warning: {src_name} looks like {name} speech but captions use English rules "
+                f"(spaces between characters, 2-word cues, no {name} font). "
+                f"Re-run with --sub-lang {SUB_LANG_FOR[speech]}.",
                 file=sys.stderr,
             )
             warned_zh = True
@@ -769,14 +846,17 @@ def build_master_srt(
 
     # Sort and write as SRT
     entries.sort(key=lambda e: e[0])
-    if sub_lang == "zh-tw":
-        # A zero-length word gets a 0.4 s cue above; never let it run into the
-        # next cue, or both are on screen at once, stacked. A cue left shorter
-        # than ZH_MIN_VISIBLE_S (a backchannel "嗯" right before the other
-        # speaker, a quick "對，" that could not merge) would only flicker, so
-        # it is dropped.
+    if lang["cjk"]:
+        # 太短的句子先延長到 ZH_CHUNK_MIN_S，用掉後面的空白（字幕顯示時間不必
+        # 和說話時間一樣長，例：切剩的「する」0.16 秒、後面停了 1.2 秒）。
+        # Never let a cue run into the next one, or both are on screen at once,
+        # stacked — this includes a cue starting at the same moment as the next
+        # (Scribe squeezes cross-talk to zero length). A cue still shorter than
+        # ZH_MIN_VISIBLE_S (a backchannel "嗯" right before the other speaker)
+        # would only flicker, so it is dropped.
         entries = [
-            (a, min(b, entries[i + 1][0]) if i + 1 < len(entries) and entries[i + 1][0] > a else b, t)
+            (a, min(max(b, a + ZH_CHUNK_MIN_S), entries[i + 1][0]) if i + 1 < len(entries)
+             else max(b, a + ZH_CHUNK_MIN_S), t)
             for i, (a, b, t) in enumerate(entries)
         ]
         entries = [e for e in entries if e[1] - e[0] >= ZH_MIN_VISIBLE_S]
@@ -908,6 +988,7 @@ def build_final_composite(
     out_path: Path,
     edit_dir: Path,
     sub_lang: str = "en",
+    sub_font: str | None = None,
 ) -> None:
     """Final pass: base → overlays (PTS-shifted) → subtitles LAST → out.
 
@@ -950,7 +1031,7 @@ def build_final_composite(
         # so a Windows path like C:\Users\... would lose its separators.
         subs_abs = subtitles_path.resolve().as_posix().replace(":", r"\:").replace("'", r"\'")
         filter_parts.append(
-            f"{current}subtitles='{subs_abs}':force_style='{SUB_LANGS[sub_lang]['force_style']}'[outv]"
+            f"{current}subtitles='{subs_abs}':force_style='{sub_force_style(sub_lang, sub_font)}'[outv]"
         )
         out_label = "[outv]"
     else:
@@ -1006,14 +1087,21 @@ def main() -> None:
         "--sub-lang",
         choices=sorted(SUB_LANGS),
         default="en",
-        help="Caption rules and font: en (2-word UPPERCASE, Helvetica) or "
-             "zh-tw (width-capped Traditional Chinese cues, Microsoft JhengHei). Default: en.",
+        help="Caption rules and font: en (2-word UPPERCASE, Helvetica), "
+             "zh-tw (width-capped Traditional Chinese cues, Microsoft JhengHei) or "
+             "ja (width-capped Japanese cues on BudouX phrases, OS Japanese font). Default: en.",
+    )
+    ap.add_argument(
+        "--sub-font",
+        default=None,
+        help="Font name for burned captions, overriding the --sub-lang default "
+             "(e.g. a font installed on this machine).",
     )
     ap.add_argument(
         "--sub-max-chars",
         type=int,
         default=None,
-        help="zh-tw only: max Chinese characters per caption cue. Default: computed from the "
+        help="zh-tw / ja only: max characters per caption cue. Default: computed from the "
              "rendered frame (about 14 on 16:9, 10 on 9:16). Pass it when the frame is cropped "
              "after render.py, e.g. per-shot vertical reframing of a 16:9 render.",
     )
@@ -1066,13 +1154,13 @@ def main() -> None:
         if args.build_subtitles:
             subs_path = edit_dir / "master.srt"
             max_width = None
-            if args.sub_lang == "zh-tw":
+            if SUB_LANGS[args.sub_lang]["cjk"]:
                 if args.sub_max_chars:
                     max_width = 2 * args.sub_max_chars
                 else:
                     dims = probe_dimensions(base_path)
                     max_width = zh_max_width(*dims) if dims else None
-                print(f"zh-tw caption cap: {(max_width or ZH_CHUNK_MAX_WIDTH) // 2} characters per cue")
+                print(f"{args.sub_lang} caption cap: {(max_width or ZH_CHUNK_MAX_WIDTH) // 2} characters per cue")
             build_master_srt(edl, edit_dir, subs_path, sub_lang=args.sub_lang, max_width=max_width)
         elif edl.get("subtitles"):
             subs_path = resolve_subtitles_path(edl["subtitles"], edit_dir)
@@ -1081,11 +1169,15 @@ def main() -> None:
     overlays = edl.get("overlays") or []
     if args.no_loudnorm:
         # Composite directly to final output
-        build_final_composite(base_path, overlays, subs_path, out_path, edit_dir, sub_lang=args.sub_lang)
+        build_final_composite(
+            base_path, overlays, subs_path, out_path, edit_dir, sub_lang=args.sub_lang, sub_font=args.sub_font
+        )
     else:
         # Composite to a temp file, then run loudnorm → final output
         tmp_composite = out_path.with_suffix(".prenorm.mp4")
-        build_final_composite(base_path, overlays, subs_path, tmp_composite, edit_dir, sub_lang=args.sub_lang)
+        build_final_composite(
+            base_path, overlays, subs_path, tmp_composite, edit_dir, sub_lang=args.sub_lang, sub_font=args.sub_font
+        )
         print("loudness normalization → social-ready (-14 LUFS / -1 dBTP / LRA 11)")
         apply_loudnorm_two_pass(tmp_composite, out_path, preview=args.draft)
         tmp_composite.unlink(missing_ok=True)

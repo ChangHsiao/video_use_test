@@ -3,6 +3,9 @@
 Cue length is measured in display width (CJK and full-width punctuation
 count 2, everything else 1), since a Latin word inside Chinese speech should
 not count each letter as a full character.
+
+日文也用這裡的規則（同樣不加空格、同樣用字寬計算），只是斷詞改用 BudouX、
+不做簡繁轉換。檔名維持 zh_text 以免動到各處的 import。
 """
 
 from __future__ import annotations
@@ -52,17 +55,31 @@ def _jieba():
 
 
 @functools.cache
+def _budoux_ja():
+    # 日文斷詞：BudouX 依文節切開（終章の | 朗読劇の | 前に），只有日文影片才載入
+    import budoux
+    return budoux.load_default_japanese_parser()
+
+
+def _segment(text: str, lang: str) -> list[str]:
+    if lang == "ja":
+        return _budoux_ja().parse(text)
+    return _jieba().lcut(text)
+
+
+@functools.cache
 def _opencc():
     import opencc
     return opencc.OpenCC("s2twp")  # Simplified → Traditional, Taiwan wording (视频 → 影片)
 
 
-def word_boundaries(texts: list[str]) -> set[int]:
+def word_boundaries(texts: list[str], lang: str = "zh") -> set[int]:
     """Indices of tokens that end a word, so a cue may break after them.
 
     The tokens are joined (a space beside Latin words, as in join_zh, so
     "Claude" "Code" stay two words), cut into words with jieba, and token i
     counts when its end lands on a word's end. The last token always does.
+    lang="ja" 改用 BudouX 的文節當作「詞」。
     """
     if not texts:
         return set()
@@ -76,7 +93,7 @@ def word_boundaries(texts: list[str]) -> set[int]:
         token_ends.append(len(joined))
     word_ends: set[int] = set()
     pos = 0
-    for word in _jieba().lcut(joined):
+    for word in _segment(joined, lang):
         pos += len(word)
         word_ends.add(pos)
     out = {i for i, end in enumerate(token_ends) if end in word_ends}
@@ -105,9 +122,13 @@ def to_traditional(text: str) -> str:
     return _opencc().convert(text)
 
 
-def join_zh(texts: list[str]) -> str:
+def join_zh(texts: list[str], space_digits: bool = True) -> str:
     """Join Chinese tokens: no space between Chinese words, one space where
-    either neighbour is a Latin letter or digit ("用 Claude Code 剪片")."""
+    either neighbour is a Latin letter or digit ("用 Claude Code 剪片").
+    space_digits=False（日文）：數字兩邊不加空格（第2部、21時），英文單字照樣加。"""
+    def spaced(c: str) -> bool:
+        return _is_latin(c) and (space_digits or not c.isdigit())
+
     out = ""
     for t in texts:
         t = t.strip()
@@ -115,27 +136,36 @@ def join_zh(texts: list[str]) -> str:
             continue
         if out:
             a, b = out[-1], t[0]
-            if (_is_latin(a) or _is_latin(b)) and not (_is_cjk_punct(a) or _is_cjk_punct(b)):
+            if (spaced(a) or spaced(b)) and not (_is_cjk_punct(a) or _is_cjk_punct(b)):
                 out += " "
         out += t
     return out
+
+
+def transcript_lang(transcript: dict) -> str | None:
+    """逐字稿是中文（"zh"）、日文（"ja"），還是要加空格的語言（None）。
+
+    中文：Scribe 標記為中文，或沒有假名且一半以上的字是漢字。
+    日文：標記 ja／jpn，或文字裡有假名。
+    """
+    code = (transcript.get("language_code") or "").lower()
+    if code.startswith(("zh", "cmn", "yue")):
+        return "zh"
+    # 日文也大量使用漢字，只看漢字比例會被誤判成中文
+    if code in ("ja", "jpn"):
+        return "ja"
+    text = "".join(w.get("text") or "" for w in transcript.get("words", []) if w.get("type") == "word")
+    # 有平假名或片假名就是日文（沒有標記、或 Scribe 標錯語言時）。
+    # 只算假名本身：中點「・」（U+30FB）在中文譯名裡也會出現（哈利・波特）
+    if any("ぁ" <= c <= "ゖ" or "ァ" <= c <= "ヺ" for c in text):
+        return "ja"
+    letters = [c for c in text if c.isalpha()]
+    cjk = sum(1 for c in letters if "㐀" <= c <= "鿿")
+    return "zh" if letters and cjk * 2 > len(letters) else None
 
 
 def looks_chinese(transcript: dict) -> bool:
     """True if Scribe tagged the transcript as Chinese, or most of its letters
     are CJK ideographs. Used to warn when Chinese speech gets English rules.
     Japanese (tagged ja/jpn, or containing kana) is never Chinese."""
-    code = (transcript.get("language_code") or "").lower()
-    if code.startswith(("zh", "cmn", "yue")):
-        return True
-    # 日文也大量使用漢字，只看漢字比例會被誤判成中文
-    if code in ("ja", "jpn"):
-        return False
-    text = "".join(w.get("text") or "" for w in transcript.get("words", []) if w.get("type") == "word")
-    # 有平假名或片假名就是日文（沒有標記、或 Scribe 標錯語言時）。
-    # 只算假名本身：中點「・」（U+30FB）在中文譯名裡也會出現（哈利・波特）
-    if any("ぁ" <= c <= "ゖ" or "ァ" <= c <= "ヺ" for c in text):
-        return False
-    letters = [c for c in text if c.isalpha()]
-    cjk = sum(1 for c in letters if "㐀" <= c <= "鿿")
-    return bool(letters) and cjk * 2 > len(letters)
+    return transcript_lang(transcript) == "zh"

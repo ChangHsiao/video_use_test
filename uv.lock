@@ -187,6 +187,15 @@ wheels = [
 ]
 
 [[package]]
+name = "budoux"
+version = "0.9.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/59/b7/a199437d133f596bfdc95531947e722d5de7b1e26c0e74b237c6de882ba0/budoux-0.9.3.tar.gz", hash = "sha256:4be806e25a7b29e8f8c97ebf714b0b42c59f580586be4bad88b2b0c7d6dbd22b", size = 111415, upload-time = "2026-09-28T01:31:35.465Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/70/230f6ca89f0fe4e1d77342dcb2e2b6bf73e6aa9d89a544c776815440962b/budoux-0.9.3-py3-none-any.whl", hash = "sha256:ac5f54d6cc5f53597fdee8e5f69acea3a44bdd17e4089a998ab10dd99cf31820", size = 105483, upload-time = "2026-09-28T01:31:34.066Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.7.22"
 source = { registry = "https://pypi.org/simple" }
@@ -2983,6 +2992,7 @@ name = "video-use"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "budoux" },
     { name = "jieba" },
     { name = "librosa", version = "0.11.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "librosa", version = "1.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -3004,6 +3014,7 @@ animations = [
 
 [package.metadata]
 requires-dist = [
+    { name = "budoux", specifier = ">=0.9" },
     { name = "jieba", specifier = ">=0.42.1" },
     { name = "librosa" },
     { name = "manim", marker = "extra == 'animations'" },
