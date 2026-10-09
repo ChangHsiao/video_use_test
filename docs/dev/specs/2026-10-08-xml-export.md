@@ -58,3 +58,5 @@
 - 和預期不同但不影響使用：
   - DaVinci 時間軸上的片段名稱顯示成檔名（`podcast_0935-1540.mp4`），不是 EDL 的 `beat`（「A1 找原因」）；聲音片段離線時才會顯示 `beat`。逐段對照改用時間碼
   - DaVinci 匯出時 A2 的 `sourcetrack` 寫成 1（我們寫 2），聲像都是置中。左右聲道是否正確分開沒有實測
+- 字幕：`File → Import → Subtitle` 匯入 `master.srt`，拖到時間軸開頭會自動新增 ST1 字幕軌，時間和片段對齊。SRT 只有文字和時間，樣式用 DaVinci 預設值：位置偏高會壓到 V2 問題卡、字型要改。在 Inspector 的 Track 分頁一次調整整條軌（字型、大小、Position Y、陰影／描邊）即可。字幕和片段沒有連結：在 DaVinci 縮短中間片段，字幕不會跟著動，要手動修改
+- 環境：DaVinci 21.1 搭配 NVIDIA 驅動 511.69 會當機（`nvoglv64.dll`，NVIDIA 顯示卡變成「GPU is lost」），更新到 582.78 後恢復正常。不是匯出程式的問題
