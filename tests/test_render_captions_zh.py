@@ -467,6 +467,25 @@ class LooksChineseTests(unittest.TestCase):
     def test_cjk_text_without_language_code(self):
         self.assertTrue(render.looks_chinese({"words": TAKE_ZH}))
 
+    # 漢字比假名多的日文：只看漢字比例會被當成中文
+    TAKE_JA = [w(c, i * 0.1, i * 0.1 + 0.1) for i, c in enumerate("東京大学で医学研究会議に参加しました")]
+
+    def test_japanese_language_code(self):
+        for code in ("ja", "jpn"):
+            self.assertFalse(render.looks_chinese({"language_code": code, "words": self.TAKE_JA}), code)
+
+    def test_kana_without_language_code(self):
+        self.assertFalse(render.looks_chinese({"words": self.TAKE_JA}))
+
+    def test_kana_with_other_language_code(self):
+        # Scribe 標錯語言時，有假名也不當成中文
+        self.assertFalse(render.looks_chinese({"language_code": "eng", "words": self.TAKE_JA}))
+
+    def test_chinese_with_katakana_middle_dot(self):
+        # 「・」是片假名區塊的符號，但中文譯名也會用，不能當成日文
+        words = [w(c, i * 0.1, i * 0.1 + 0.1) for i, c in enumerate("我很喜歡哈利・波特這本書")]
+        self.assertTrue(render.looks_chinese({"words": words}))
+
 
 if __name__ == "__main__":
     unittest.main()

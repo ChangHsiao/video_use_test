@@ -123,11 +123,19 @@ def join_zh(texts: list[str]) -> str:
 
 def looks_chinese(transcript: dict) -> bool:
     """True if Scribe tagged the transcript as Chinese, or most of its letters
-    are CJK ideographs. Used to warn when Chinese speech gets English rules."""
+    are CJK ideographs. Used to warn when Chinese speech gets English rules.
+    Japanese (tagged ja/jpn, or containing kana) is never Chinese."""
     code = (transcript.get("language_code") or "").lower()
     if code.startswith(("zh", "cmn", "yue")):
         return True
+    # 日文也大量使用漢字，只看漢字比例會被誤判成中文
+    if code in ("ja", "jpn"):
+        return False
     text = "".join(w.get("text") or "" for w in transcript.get("words", []) if w.get("type") == "word")
+    # 有平假名或片假名就是日文（沒有標記、或 Scribe 標錯語言時）。
+    # 只算假名本身：中點「・」（U+30FB）在中文譯名裡也會出現（哈利・波特）
+    if any("ぁ" <= c <= "ゖ" or "ァ" <= c <= "ヺ" for c in text):
+        return False
     letters = [c for c in text if c.isalpha()]
     cjk = sum(1 for c in letters if "㐀" <= c <= "鿿")
     return bool(letters) and cjk * 2 > len(letters)
