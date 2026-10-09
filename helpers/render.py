@@ -805,6 +805,49 @@ def sub_force_style(sub_lang: str, font: str | None = None, margin_v: int | None
     return style
 
 
+_HEX_COLOUR = re.compile(r"#[0-9A-Fa-f]{6}")
+
+
+def _speaker_colours(edl: dict) -> dict[str, dict[str, str]]:
+    """EDL 的 speakers → {source: {speaker_id: "#RRGGBB"}}；顏色格式錯就報錯，指出是哪個說話者。"""
+    out: dict[str, dict[str, str]] = {}
+    for src, speakers in (edl.get("speakers") or {}).items():
+        for sid, info in (speakers or {}).items():
+            colour = (info or {}).get("color")
+            if colour is None:
+                continue
+            if not isinstance(colour, str) or not _HEX_COLOUR.fullmatch(colour):
+                raise ValueError(f'speakers.{src}.{sid}.color must look like "#RRGGBB", got {colour!r}')
+            out.setdefault(src, {})[sid] = colour
+    return out
+
+
+def _apply_speaker_fixes(words: list[dict], fixes: list[dict]) -> list[dict]:
+    """把開始時間落在 [start, end) 的字改成指定的說話者。
+    複製字典再改，不動到逐字稿原本的資料（Scribe 的判斷留著可查）。"""
+    if not fixes:
+        return words
+    out: list[dict] = []
+    for w in words:
+        s = w.get("start")
+        for f in fixes:
+            if s is not None and float(f["start"]) <= s < float(f["end"]):
+                w = {**w, "speaker_id": f["speaker"]}
+        out.append(w)
+    return out
+
+
+def _speaker_runs(words: list[dict]) -> list[list[dict]]:
+    """依說話者切成連續的段落，讓英文兩字一句不會把兩個人的字放在同一句。"""
+    runs: list[list[dict]] = []
+    for w in words:
+        if runs and not _speaker_changes(runs[-1][-1], w):
+            runs[-1].append(w)
+        else:
+            runs.append([w])
+    return runs
+
+
 def build_master_srt(
     edl: dict, edit_dir: Path, out_path: Path, sub_lang: str = "en", max_width: int | None = None
 ) -> None:
@@ -815,7 +858,10 @@ def build_master_srt(
       cues (chunk_words_zh), "ja" the same rules on BudouX phrases (chunk_words_ja)
     - max_width: zh-tw / ja cue width cap (see zh_max_width); None keeps ZH_CHUNK_MAX_WIDTH
     - Output times computed as word.start - segment_start + segment_offset
+    - EDL speaker_fixes：斷句前先修正說話者；EDL speakers：每句依第一個字的
+      說話者包上 <font color="#RRGGBB">（libass 燒字幕時會用這個顏色）
     """
+    speaker_colours = _speaker_colours(edl)
     lang = SUB_LANGS[sub_lang]
     chunk_fn = lang["chunk"]
     if lang["cjk"]:
@@ -853,15 +899,24 @@ def build_master_srt(
             )
             warned_zh = True
         words_in_seg = _words_in_range(transcript, seg_start, seg_end)
+        fixes = [f for f in edl.get("speaker_fixes") or [] if f.get("source") == src_name]
+        words_in_seg = _apply_speaker_fixes(words_in_seg, fixes)
+        colours = speaker_colours.get(src_name)
+        # 中日文的斷句本來就在換人時斷開；其他語言有設定顏色時先依說話者分段
+        groups = _speaker_runs(words_in_seg) if colours and not lang["cjk"] else [words_in_seg]
 
-        for chunk in chunk_fn(words_in_seg):
+        for chunk in (c for g in groups for c in chunk_fn(g)):
             local_start = max(seg_start, chunk[0].get("start", seg_start))
             local_end = min(seg_end, chunk[-1].get("end", seg_end))
             out_start = max(0.0, local_start - seg_start) + seg_offset
             out_end = max(0.0, local_end - seg_start) + seg_offset
             if out_end <= out_start:
                 out_end = out_start + 0.4
-            entries.append((out_start, out_end, lang["format"](chunk)))
+            text = lang["format"](chunk)
+            colour = colours.get(chunk[0].get("speaker_id")) if colours else None
+            if colour:
+                text = f'<font color="{colour}">{text}</font>'
+            entries.append((out_start, out_end, text))
 
         seg_offset += seg_duration
 

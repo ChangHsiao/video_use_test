@@ -201,6 +201,8 @@ Alignment=2,MarginV=90   ← replaced per frame, see above
 
 **`ja`** — Japanese speech. Selected with `render.py --sub-lang ja`. Same rules as `zh-tw` (display-width cap from the rendered frame, `--sub-max-chars`, cut points, speaker-change breaks, short-cue merge, stretch or borrow, no overlap, en space for mid-cue punctuation), except: cues break only at BudouX phrase boundaries (`終章の | 朗読劇の | 前に`) instead of jieba words, the text is **not** converted (no OpenCC), and digits get no surrounding spaces (`第2部`, `21時`). Font defaults to the OS's Japanese face (Yu Gothic on Windows, Hiragino Sans on macOS, Noto Sans CJK JP elsewhere); pass `--sub-font` if that face is missing.
 
+**Speaker colours — check the labels first.** Scribe's diarization mislabels turns, worst in cross-talk and between similar voices (a 2.5-minute two-host test had 3 wrong stretches, including the punchline). Before you add `speakers`: read the transcript for turns that contradict the content — someone addressed by name answering themselves, "I'm the one on stage" from the wrong person, a sentence split between speakers, a question and its answer under one id — and list each suspect range with the quote. The user listens and confirms; only then write `speaker_fixes`. Then render a `--preview` with the colours on and have the user **watch** it — confirming from a table of quotes is error-prone (in the same test two "fixes" made from the table were wrong and only showed up in the coloured preview). Ask the user which id is whom and what colours they want; don't guess names from voices.
+
 **Choosing the caption language.** Read it from the transcript (Scribe's `language_code`, or just the text), not from the user's chat language. State it in the strategy — e.g. "captions: Traditional Chinese, `zh-tw` style" — so the user confirms it in step 4. Pass `--sub-lang zh-tw` for Chinese speech and `--sub-lang ja` for Japanese; `render.py` warns on stderr if a Chinese or Japanese transcript is rendered with English rules.
 
 Invent a third style if neither fits. Hard rules: subtitles LAST (Rule 1), output-timeline offsets (Rule 5).
@@ -312,6 +314,17 @@ Match the source unless the user asked for something specific. Common targets: `
 ```
 
 `grade` is a preset name or raw ffmpeg filter. `overlays` are rendered animation clips. `subtitles` is optional and applied LAST.
+
+Optional, for per-speaker caption colours (`--build-subtitles`, any `--sub-lang`):
+
+```json
+"speakers": {"C0103": {"speaker_0": {"name": "Host", "color": "#FFD54F"},
+                        "speaker_1": {"name": "Guest", "color": "#CE93D8"}}},
+"speaker_fixes": [{"source": "C0103", "start": 145.2, "end": 150.2, "speaker": "speaker_0",
+                  "note": "Scribe gave this to speaker_1; user checked by ear"}]
+```
+
+`speakers` maps each source's Scribe speaker ids to a name and a `#RRGGBB` colour; every cue is wrapped in `<font color="…">` by its first word's speaker, so the colour lives in `master.srt` (proofread the text inside the tag). Speakers without an entry stay white; without `speakers` the SRT is unchanged. `speaker_fixes` relabels the words whose start falls in `[start, end)` (source time) before cues are built — the transcript JSON is never edited. Cues always break on a change of speaker once colours are on.
 
 ## Memory — `project.md`
 

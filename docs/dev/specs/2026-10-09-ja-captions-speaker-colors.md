@@ -22,7 +22,7 @@
 - 技術細節：
   - **1a ① 不加空格**：`zh_text.py` 新增 `transcript_lang(transcript) -> "zh" | "ja" | None`（沿用 `looks_chinese()` 的判斷，日文：標記 `ja`／`jpn` 或有假名）。`pack_transcripts.py`：`zh` 照舊（`join_zh` + OpenCC），`ja` 用 `join_zh` 的接法但不轉繁體。`looks_chinese()` 保留，改成呼叫 `transcript_lang()`
   - **1a ② `--sub-lang ja`**：把 `chunk_words_zh()` 的斷詞改成可傳入（中文 jieba、日文 BudouX 文節），其餘規則共用：字寬上限（依畫面寬度，直式約 10 字）、標點優先、說話者換人斷句、短句合併、不重疊、太短拿掉。輸出：接法同 ① 不轉繁體；句尾 `、。` 去掉、`？！` 保留、句中標點換 En space（和中文一致，日本電視字幕也常用空白代替標點）。`render.py` 的警告：日文逐字稿用 `en` 規則時也要警告
-  - **1b ③ 說話者顏色**：EDL 新增 `"speakers": {"<source>": {"speaker_0": {"name": "...", "color": "#RRGGBB"}}}`。燒字幕的格式（SRT 加 `<font color>` 或另產生 ASS）在 1b 實作前確認並記入修訂紀錄；`master.srt` 保持純文字，給 DaVinci 用
+  - **1b ③ 說話者顏色**：EDL 新增 `"speakers": {"<source>": {"speaker_0": {"name": "...", "color": "#RRGGBB"}}}`。顏色用 SRT 的 `<font color="#RRGGBB">` 標籤直接寫進 `master.srt`（2026-10-09 修訂，見修訂紀錄）
   - **1b ④ 說話者修正**：EDL 新增 `"speaker_fixes": [{"source": "...", "start": 145.2, "end": 150.2, "speaker": "speaker_0"}]`，範圍內的字改成指定的說話者，在斷句之前套用。SKILL.md 加一步：用說話者顏色前，AI 依內容檢查標記（稱呼對方名字、「我要上台」這類自述）並列出可疑範圍，使用者聽過確認後才寫進 EDL
   - 實測數據：996 個 token 全是單字；說話者換人 40 次、重疊 0 次；沒有任何聲音事件；左右聲道兩人音量相同（無法用聲道分辨說話者）
 
@@ -47,3 +47,16 @@
 
 - 範圍有沒有變：3 在原本的完成條件內（沒有空格）；1、2 會改到中日文共用的規則
 - 「不能改動的地方」是否仍然成立：3 成立（中文不變）；1、2 做的話中文字幕會改變，要重跑 podcast 比對
+
+### 2026-10-09：1b 開始前決定字幕顏色的格式
+- 實驗：SRT 寫 `<font color="#FFD54F">…</font>`，用 render.py 同樣的 `force_style`（含 `PrimaryColour` 白色）燒進畫面 → 兩種顏色都正確顯示，字型、描邊、`MarginV` 照常（scratchpad `colortest/ab.jpg`）
+- 決定：顏色標籤直接寫進 `master.srt`，不另外產生 ASS。理由：只有一個檔案，使用者校對 `master.srt` 時顏色跟著文字走；改用 EDL `subtitles` 指定校對過的檔案也保有顏色
+- 原本寫的「`master.srt` 保持純文字，給 DaVinci 用」改掉：DaVinci 匯入帶標籤的 SRT 會怎麼顯示還沒測，留到要交給剪輯師時再確認（必要時匯出時另存一份去掉標籤的副本）
+- 英文 `chunk_words` 不會在說話者換人時斷句：有設定 `speakers` 時，先依說話者把字分段再斷句，任何語言都一樣；沒設定時行為不變
+
+### 2026-10-09：1b 驗證時發現（使用者看上色後的預覽）
+| # | 發現了什麼 | 原因 | 怎麼改 |
+|---|---|---|---|
+| 1 | 32 秒「ちょっとまだ信じきれてない」、49 秒「までを描くんですよ」顏色錯 | 這兩處是用「時間＋引文」的表格請使用者確認後寫進 `speaker_fixes`，但 Scribe 原本是對的；表格對不準使用者聽到的是哪一句 | 拿掉這兩筆修正（B 段剩 6 筆）。SKILL.md 的檢查步驟加上：寫好 `speaker_fixes` 後算繪上色的預覽，請使用者**看影片**確認 |
+
+- 範圍有沒有變：沒有（程式不變，只改 B 段資料和 SKILL.md 說明）
