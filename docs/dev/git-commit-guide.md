@@ -40,7 +40,7 @@ Co-Authored-By: ...             ← 尾註（和 Agent 一起完成時）
 
 1. 第一則訊息：列出這次修改的白話摘要和 `git add`／`git status` 指令，附上該階段的問題
 2. 使用者回答後：回饋答案，把訊息寫進 scratchpad 的檔案，**在對話中列出完整訊息並逐行附中文說明**，再給 `git commit -F <檔案>` 和 `git push`
-3. 指令一條一行；使用者正從 cmd 改用 Git Bash，路徑用 Git Bash 寫法（`/c/Users/...`）
+3. 指令的寫法照專案根目錄 `CLAUDE.md` 的「環境」段落
 4. 更新 memory 裡的階段和連續次數
 
 ## 句型表（讀懂訊息用，不用背）
