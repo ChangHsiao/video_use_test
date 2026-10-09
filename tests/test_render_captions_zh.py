@@ -1,3 +1,5 @@
+# 時間資料優先取自實測逐字稿：自己編的時間可能重現不了真實問題
+# （2026-10-09「存在的。好」的測試一開始直接通過，見 specs/2026-10-09-zh-tw-vertical-captions.md 修訂紀錄）
 import importlib
 import importlib.util
 import io
