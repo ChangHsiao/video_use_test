@@ -76,6 +76,7 @@ Helpers (`helpers/transcribe.py`, `helpers/render.py`, etc.) live alongside this
 - **`pack_transcripts.py --edit-dir <dir>`** — `transcripts/*.json` → `takes_packed.md` (phrase-level, break on silence ≥ 0.5s). Chinese transcripts are joined without spaces and converted to Traditional (Taiwan).
 - **`timeline_view.py <video> <start> <end>`** — filmstrip + waveform PNG. On-demand visual drill-down. **Not a scan tool** — use it at decision points, not constantly.
 - **`render.py <edl.json> -o <out>`** — per-segment extract → concat → overlays (PTS-shifted) → subtitles LAST. `--preview` for 720p fast. `--build-subtitles` to generate master.srt inline. `--sub-lang en|zh-tw` picks caption rules and font (default `en`).
+- **`export_xml.py <edl.json>`** — EDL → `timeline.xml` (Final Cut Pro 7 XML) so an editor can finish the cut in DaVinci Resolve or Premiere. V1 clips point at the original sources with in/out points (every cut can be rolled open again), audio follows on one track per channel, overlays go on V2 (a sibling `.png` is used as a still when present). Subtitles are not in the XML — import `master.srt` separately. Grade, fades and loudnorm are not exported.
 - **`grade.py <in> -o <out>`** — ffmpeg filter chain grade. Presets + `--filter '<raw>'` for custom.
 
 For animations, create `<edit>/animations/slot_<id>/` with `Bash` and spawn a sub-agent via the `Agent` tool.

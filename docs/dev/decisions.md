@@ -21,3 +21,6 @@
 | 2026-10-06 | 中文字幕只在 jieba 判斷的詞邊界斷句 | Scribe 一個字一個 token，停頓和寬度上限會把詞切開（全 / 力、傷 / 得） | 只靠停頓和標點斷句 |
 | 2026-10-06 | jieba 和 OpenCC 放在主要依賴，但第一次用到時才載入 | 安裝簡單，`uv sync` 就有；英文影片不會載入，不拖慢速度 | 放在 optional-dependencies |
 | 2026-10-06 | `pack_transcripts.py` 自動判斷中文，不加參數 | 和 `render.py` 共用 `looks_chinese()`；英文輸出完全不變 | 加 `--lang` 參數 |
+| 2026-10-08 | 剪輯專案檔的匯出格式用 Final Cut Pro 7 XML（新增 `export_xml.py`） | DaVinci、Premiere 都能讀；能表達多軌（片段、問題卡、聲音）和素材總長度，剪輯師才能把剪掉的部分拉回來 | CMX3600 EDL（只有單軌剪輯點）、新版 FCPXML（Premiere 不能讀）、OpenTimelineIO（要多裝套件） |
+| 2026-10-08 | 問題卡在 XML 裡改用同名的 PNG，不用算繪時的 `.mov` | DaVinci 免費版不一定能解 qtrle 編碼的 `.mov`；PNG 一定能讀，在時間軸上也能直接調整長度 | 直接引用 `.mov` |
+| 2026-10-08 | SKILL.md 的 Helpers 清單加入 `export_xml.py`，和官方版產生差異 | SKILL.md 是 AI 讀的說明，不寫的話 AI 不知道有這個工具可以用 | 只寫在 README，不改 SKILL.md |
