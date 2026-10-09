@@ -75,7 +75,7 @@ Helpers (`helpers/transcribe.py`, `helpers/render.py`, etc.) live alongside this
 - **`transcribe_batch.py <videos_dir>`** — 4-worker parallel transcription. Use for multi-take.
 - **`pack_transcripts.py --edit-dir <dir>`** — `transcripts/*.json` → `takes_packed.md` (phrase-level, break on silence ≥ 0.5s). Chinese transcripts are joined without spaces and converted to Traditional (Taiwan); Japanese transcripts are joined without spaces and left as they are.
 - **`timeline_view.py <video> <start> <end>`** — filmstrip + waveform PNG. On-demand visual drill-down. **Not a scan tool** — use it at decision points, not constantly.
-- **`render.py <edl.json> -o <out>`** — per-segment extract → concat → overlays (PTS-shifted) → subtitles LAST. `--preview` for 720p fast. `--build-subtitles` to generate master.srt inline. `--sub-lang en|zh-tw|ja` picks caption rules and font (default `en`); `--sub-font NAME` overrides the font.
+- **`render.py <edl.json> -o <out>`** — per-segment extract → concat → overlays (PTS-shifted) → subtitles LAST. `--preview` for 720p fast. `--build-subtitles` to generate master.srt inline. `--sub-lang en|zh-tw|ja` picks caption rules and font (default `en`); `--sub-font NAME` overrides the font; `--sub-margin PCT` sets the caption height (default from the frame: ~31% on 9:16, ~8% on 16:9).
 - **`export_xml.py <edl.json>`** — EDL → `timeline.xml` (Final Cut Pro 7 XML) so an editor can finish the cut in DaVinci Resolve or Premiere. V1 clips point at the original sources with in/out points (every cut can be rolled open again), audio follows on one track per channel, overlays go on V2 (a sibling `.png` is used as a still when present). Subtitles are not in the XML — import `master.srt` separately. Grade, fades and loudnorm are not exported.
 - **`grade.py <in> -o <out>`** — ffmpeg filter chain grade. Presets + `--filter '<raw>'` for custom.
 
@@ -186,13 +186,13 @@ Subtitles have three dimensions worth reasoning about: **chunking** (1/2/3/sente
 
 **Worked styles** — pick, adapt, or invent:
 
-**`bold-overlay`** — short-form tech launch, fast-paced social. ~2-word chunks, UPPERCASE, break on punctuation and pauses ≥ 0.3s, grow to 3 words rather than flash a cue < 0.35s (`chunk_words` in `render.py`), Helvetica 18 Bold, white-on-outline, `MarginV=35`. `render.py` ships with this as `SUB_FORCE_STYLE`.
+**`bold-overlay`** — short-form tech launch, fast-paced social. ~2-word chunks, UPPERCASE, break on punctuation and pauses ≥ 0.3s, grow to 3 words rather than flash a cue < 0.35s (`chunk_words` in `render.py`), Helvetica 18 Bold, white-on-outline. `render.py` ships with this as `SUB_FORCE_STYLE`. **Caption height follows the rendered frame:** 9:16 keeps `MarginV=90` (~31% up, clear of the TikTok / Reels / Shorts UI); 16:9 and square drop to ~8% up (`MarginV=23`), since landscape players have no UI there and 90 sits on the speaker's chest. `--sub-margin PCT` overrides it — pass it when the frame is cropped after `render.py` (e.g. `--sub-margin 31` for a 16:9 render reframed to 9:16), the same case as `--sub-max-chars`.
 
 ```
 FontName=Helvetica,FontSize=18,Bold=1,
 PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,
 BorderStyle=1,Outline=2,Shadow=0,
-Alignment=2,MarginV=35
+Alignment=2,MarginV=90   ← replaced per frame, see above
 ```
 
 **`natural-sentence`** (if you invent this mode) — narrative, documentary, education. 4–7 word chunks, sentence case, break on natural pauses, `MarginV=60–80`, larger font for readability, slightly wider max-width. No shipped force_style — design one if you need it.

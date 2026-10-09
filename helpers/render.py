@@ -73,6 +73,24 @@ SUB_FORCE_STYLE = (
     "Alignment=2,MarginV=90"
 )
 
+# 上面的安全區規則只針對直式短影音。橫式沒有 App 按鈕，MarginV=90 會把字幕放在
+# 人物胸口，所以橫式和方形改成離底部約 8%（一般字幕安全範圍是離邊緣 5～10%）。
+# 畫面在 render.py 之後才裁切時（16:9 算繪後依鏡頭裁成 9:16），量到的比例不對，
+# 用 --sub-margin 指定。
+SUB_MARGIN_V_PORTRAIT = 90
+SUB_MARGIN_PCT_LANDSCAPE = 8
+SUB_PLAY_RES_Y = 288  # libass renders SRT on this canvas height; MarginV is in these units
+
+
+def sub_margin_v(width: int | None, height: int | None, pct: float | None = None) -> int:
+    """字幕離底部的 MarginV。pct（--sub-margin，畫面高度的百分比）優先；
+    量不到尺寸或直式時用官方的 90；橫式和方形用 SUB_MARGIN_PCT_LANDSCAPE。"""
+    if pct is not None:
+        return round(SUB_PLAY_RES_Y * pct / 100)
+    if not width or not height or height > width:
+        return SUB_MARGIN_V_PORTRAIT
+    return round(SUB_PLAY_RES_Y * SUB_MARGIN_PCT_LANDSCAPE / 100)
+
 # -------- Helpers ------------------------------------------------------------
 
 
@@ -776,11 +794,14 @@ SUB_LANGS = {
 SUB_LANG_FOR = {"zh": "zh-tw", "ja": "ja"}
 
 
-def sub_force_style(sub_lang: str, font: str | None = None) -> str:
-    """該語言燒字幕用的樣式；font（--sub-font）會換掉預設字型。"""
+def sub_force_style(sub_lang: str, font: str | None = None, margin_v: int | None = None) -> str:
+    """該語言燒字幕用的樣式；font（--sub-font）會換掉預設字型，
+    margin_v（見 sub_margin_v）會換掉字幕離底部的高度。"""
     style = SUB_LANGS[sub_lang]["force_style"]
     if font:
         style = re.sub(r"FontName=[^,]*", f"FontName={font}", style)
+    if margin_v is not None:
+        style = re.sub(r"MarginV=\d+", f"MarginV={margin_v}", style)
     return style
 
 
@@ -989,6 +1010,7 @@ def build_final_composite(
     edit_dir: Path,
     sub_lang: str = "en",
     sub_font: str | None = None,
+    margin_v: int | None = None,
 ) -> None:
     """Final pass: base → overlays (PTS-shifted) → subtitles LAST → out.
 
@@ -1031,7 +1053,7 @@ def build_final_composite(
         # so a Windows path like C:\Users\... would lose its separators.
         subs_abs = subtitles_path.resolve().as_posix().replace(":", r"\:").replace("'", r"\'")
         filter_parts.append(
-            f"{current}subtitles='{subs_abs}':force_style='{sub_force_style(sub_lang, sub_font)}'[outv]"
+            f"{current}subtitles='{subs_abs}':force_style='{sub_force_style(sub_lang, sub_font, margin_v)}'[outv]"
         )
         out_label = "[outv]"
     else:
@@ -1106,6 +1128,16 @@ def main() -> None:
              "after render.py, e.g. per-shot vertical reframing of a 16:9 render.",
     )
     ap.add_argument(
+        "--sub-margin",
+        type=float,
+        default=None,
+        metavar="PCT",
+        help="Caption height above the bottom edge, as a percentage of the frame height (0–50). "
+             "Default: from the rendered frame — 9:16 keeps the short-form safe zone (~31%%), "
+             "16:9 and square sit ~8%% up. Pass it when the frame is cropped after render.py "
+             "(e.g. --sub-margin 31 for a 16:9 render later reframed to 9:16).",
+    )
+    ap.add_argument(
         "--no-subtitles",
         action="store_true",
         help="Skip subtitles even if the EDL references one",
@@ -1124,6 +1156,8 @@ def main() -> None:
              "--fps 30000/1001 to force.",
     )
     args = ap.parse_args()
+    if args.sub_margin is not None and not 0 <= args.sub_margin <= 50:
+        ap.error("--sub-margin must be between 0 and 50 (percent of the frame height)")
 
     edl_path = args.edl.resolve()
     if not edl_path.exists():
@@ -1150,7 +1184,11 @@ def main() -> None:
 
     # 3. Subtitles: build if requested, resolve final path
     subs_path: Path | None = None
+    margin_v: int | None = None
     if not args.no_subtitles:
+        dims = probe_dimensions(base_path)
+        margin_v = sub_margin_v(*(dims or (None, None)), pct=args.sub_margin)
+        print(f"subtitle margin: MarginV={margin_v} (~{100 * margin_v / SUB_PLAY_RES_Y:.0f}% from bottom)")
         if args.build_subtitles:
             subs_path = edit_dir / "master.srt"
             max_width = None
@@ -1158,7 +1196,6 @@ def main() -> None:
                 if args.sub_max_chars:
                     max_width = 2 * args.sub_max_chars
                 else:
-                    dims = probe_dimensions(base_path)
                     max_width = zh_max_width(*dims) if dims else None
                 print(f"{args.sub_lang} caption cap: {(max_width or ZH_CHUNK_MAX_WIDTH) // 2} characters per cue")
             build_master_srt(edl, edit_dir, subs_path, sub_lang=args.sub_lang, max_width=max_width)
@@ -1170,13 +1207,15 @@ def main() -> None:
     if args.no_loudnorm:
         # Composite directly to final output
         build_final_composite(
-            base_path, overlays, subs_path, out_path, edit_dir, sub_lang=args.sub_lang, sub_font=args.sub_font
+            base_path, overlays, subs_path, out_path, edit_dir, sub_lang=args.sub_lang, sub_font=args.sub_font,
+            margin_v=margin_v,
         )
     else:
         # Composite to a temp file, then run loudnorm → final output
         tmp_composite = out_path.with_suffix(".prenorm.mp4")
         build_final_composite(
-            base_path, overlays, subs_path, tmp_composite, edit_dir, sub_lang=args.sub_lang, sub_font=args.sub_font
+            base_path, overlays, subs_path, tmp_composite, edit_dir, sub_lang=args.sub_lang, sub_font=args.sub_font,
+            margin_v=margin_v,
         )
         print("loudness normalization → social-ready (-14 LUFS / -1 dBTP / LRA 11)")
         apply_loudnorm_two_pass(tmp_composite, out_path, preview=args.draft)
