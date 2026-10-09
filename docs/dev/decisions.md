@@ -24,3 +24,5 @@
 | 2026-10-08 | 剪輯專案檔的匯出格式用 Final Cut Pro 7 XML（新增 `export_xml.py`） | DaVinci、Premiere 都能讀；能表達多軌（片段、問題卡、聲音）和素材總長度，剪輯師才能把剪掉的部分拉回來 | CMX3600 EDL（只有單軌剪輯點）、新版 FCPXML（Premiere 不能讀）、OpenTimelineIO（要多裝套件） |
 | 2026-10-08 | 問題卡在 XML 裡改用同名的 PNG，不用算繪時的 `.mov` | DaVinci 免費版不一定能解 qtrle 編碼的 `.mov`；PNG 一定能讀，在時間軸上也能直接調整長度 | 直接引用 `.mov` |
 | 2026-10-08 | SKILL.md 的 Helpers 清單加入 `export_xml.py`，和官方版產生差異 | SKILL.md 是 AI 讀的說明，不寫的話 AI 不知道有這個工具可以用 | 只寫在 README，不改 SKILL.md |
+| 2026-10-09 | XML 的 `<file>` 一律寫起始時間碼 `00:00:00:00` | 沒寫的話，DaVinci 匯入後聲音片段會離線（用 4 份只改一處的測試檔確認，見 `specs/2026-10-08-xml-export.md` 修訂紀錄） | 讀素材本身的時間碼（ffprobe 的 `timecode` 標籤）：沒有這類素材可以驗證，留到之後 |
+| 2026-10-09 | 字幕不放進 XML，另外匯入 `master.srt` | SRT 每套剪輯軟體都讀得懂；FCP 7 XML 的字幕寫法各家不一。代價是字幕和片段沒有連結，剪輯師改了片段要手動改字幕 | 把字幕寫進 XML |
