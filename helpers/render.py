@@ -26,6 +26,7 @@ import json
 import re
 import subprocess
 import sys
+from datetime import datetime
 from fractions import Fraction
 from pathlib import Path
 
@@ -197,6 +198,12 @@ def probe_dimensions(video: Path) -> tuple[int, int] | None:
 
 def is_portrait_source(video: Path) -> bool:
     """Return True if the displayed video is portrait, including rotation."""
+    dims = probe_display_dimensions(video)
+    return dims is not None and dims[1] > dims[0]
+
+
+def probe_display_dimensions(video: Path) -> tuple[int, int] | None:
+    """Displayed width and height of a source (quarter-turn rotation applied), or None."""
     try:
         out = subprocess.run(
             ["ffprobe", "-v", "error", "-select_streams", "v:0",
@@ -207,7 +214,7 @@ def is_portrait_source(video: Path) -> bool:
         )
         streams = json.loads(out.stdout).get("streams") or []
         if not streams:
-            return False
+            return None
         stream = streams[0]
         w, h = int(stream["width"]), int(stream["height"])
 
@@ -222,7 +229,7 @@ def is_portrait_source(video: Path) -> bool:
                 break
         if int(round(float(rotation))) % 360 in (90, 270):
             w, h = h, w
-        return h > w
+        return w, h
     except (
         subprocess.CalledProcessError,
         json.JSONDecodeError,
@@ -232,7 +239,7 @@ def is_portrait_source(video: Path) -> bool:
         TypeError,
         ValueError,
     ):
-        return False
+        return None
 
 
 def parse_fps(value: str) -> str:
@@ -943,7 +950,38 @@ def build_master_srt(
         lines.append(t)
         lines.append("")
     out_path.write_text("\n".join(lines), encoding="utf-8")
-    print(f"master SRT → {out_path.name} ({len(entries)} cues)")
+    # build_subtitles 先寫到 master.srt.tmp 再換上，訊息顯示最後的檔名
+    print(f"master SRT → {out_path.name.removesuffix('.tmp')} ({len(entries)} cues)")
+
+
+def replace_with_backup(new_path: Path, out_path: Path, now: datetime | None = None) -> Path | None:
+    """把剛產生的 new_path 換成 out_path；舊檔內容不同時先另存備份。
+
+    校對、翻譯過的 master.srt 被 --build-subtitles 重新產生時，改過的內容會留在
+    master.srt.bak-YYYYMMDD-HHMMSS。內容相同就不留備份，免得 edit/ 堆滿一樣的檔案。
+    回傳備份路徑；沒有備份時回傳 None。
+    """
+    if not out_path.exists():
+        new_path.replace(out_path)
+        return None
+    if out_path.read_bytes() == new_path.read_bytes():
+        new_path.unlink()
+        print(f"  {out_path.name} unchanged")
+        return None
+    stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
+    backup = out_path.with_name(f"{out_path.name}.bak-{stamp}")
+    n = 2
+    while backup.exists():
+        backup = out_path.with_name(f"{out_path.name}.bak-{stamp}-{n}")
+        n += 1
+    out_path.replace(backup)
+    new_path.replace(out_path)
+    print(f"  previous {out_path.name} kept as {backup.name}")
+    print(
+        f"  if the previous file was proofread or translated, point the EDL `subtitles` at "
+        f"{backup.name} and render without --build-subtitles"
+    )
+    return backup
 
 
 # -------- Loudness normalization (social-ready audio) -----------------------
@@ -1141,10 +1179,36 @@ def build_final_composite(
 # -------- Main ---------------------------------------------------------------
 
 
+def build_subtitles(edl: dict, edit_dir: Path, args: argparse.Namespace,
+                    dims: tuple[int, int] | None) -> Path:
+    """--build-subtitles / --subtitles-only：產生 edit_dir/master.srt（舊檔內容不同時先備份）。"""
+    subs_path = edit_dir / "master.srt"
+    named = edl.get("subtitles")
+    # EDL 指向 master.srt 本身時沒有被忽略（舊內容不同會備份）；指向別的檔案才警告
+    if named and subs_path.resolve() not in (resolve_path(named, edit_dir), Path(named).resolve()):
+        print(
+            f"  warning: the EDL sets subtitles={edl['subtitles']!r}, which is ignored — "
+            f"captions are rebuilt into master.srt",
+            file=sys.stderr,
+        )
+    max_width = None
+    if SUB_LANGS[args.sub_lang]["cjk"]:
+        if args.sub_max_chars:
+            max_width = 2 * args.sub_max_chars
+        else:
+            max_width = zh_max_width(*dims) if dims else None
+        print(f"{args.sub_lang} caption cap: {(max_width or ZH_CHUNK_MAX_WIDTH) // 2} characters per cue")
+    tmp_path = edit_dir / "master.srt.tmp"
+    build_master_srt(edl, edit_dir, tmp_path, sub_lang=args.sub_lang, max_width=max_width)
+    replace_with_backup(tmp_path, subs_path)
+    return subs_path
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Render a video from an EDL")
     ap.add_argument("edl", type=Path, help="Path to edl.json")
-    ap.add_argument("-o", "--output", type=Path, required=True, help="Output video path")
+    ap.add_argument("-o", "--output", type=Path, default=None,
+                    help="Output video path (required unless --subtitles-only)")
     ap.add_argument(
         "--preview",
         action="store_true",
@@ -1158,7 +1222,14 @@ def main() -> None:
     ap.add_argument(
         "--build-subtitles",
         action="store_true",
-        help="Build master.srt from transcripts + EDL offsets before compositing",
+        help="Build master.srt from transcripts + EDL offsets before compositing. "
+             "An existing master.srt with different content is kept as master.srt.bak-<time>.",
+    )
+    ap.add_argument(
+        "--subtitles-only",
+        action="store_true",
+        help="Only build master.srt (implies --build-subtitles), no render — a draft to "
+             "proofread or translate in seconds. Caption width comes from the first source's frame.",
     )
     ap.add_argument(
         "--sub-lang",
@@ -1213,6 +1284,10 @@ def main() -> None:
     args = ap.parse_args()
     if args.sub_margin is not None and not 0 <= args.sub_margin <= 50:
         ap.error("--sub-margin must be between 0 and 50 (percent of the frame height)")
+    if args.subtitles_only and args.no_subtitles:
+        ap.error("--subtitles-only and --no-subtitles cannot be used together")
+    if args.output is None and not args.subtitles_only:
+        ap.error("-o/--output is required (unless --subtitles-only)")
 
     edl_path = args.edl.resolve()
     if not edl_path.exists():
@@ -1220,6 +1295,14 @@ def main() -> None:
 
     edl = json.loads(edl_path.read_text(encoding="utf-8"))
     edit_dir = edl_path.parent
+
+    if args.subtitles_only:
+        # 不算繪：字寬上限只看寬高比，改用第一段的原始素材尺寸
+        first = edl["ranges"][0]["source"]
+        src = resolve_path(edl["sources"][first], edit_dir)
+        build_subtitles(edl, edit_dir, args, probe_display_dimensions(src))
+        return
+
     out_path = args.output.resolve()
 
     # 1. Extract per-segment (auto-grade per range if EDL grade is "auto")
@@ -1245,15 +1328,7 @@ def main() -> None:
         margin_v = sub_margin_v(*(dims or (None, None)), pct=args.sub_margin)
         print(f"subtitle margin: MarginV={margin_v} (~{100 * margin_v / SUB_PLAY_RES_Y:.0f}% from bottom)")
         if args.build_subtitles:
-            subs_path = edit_dir / "master.srt"
-            max_width = None
-            if SUB_LANGS[args.sub_lang]["cjk"]:
-                if args.sub_max_chars:
-                    max_width = 2 * args.sub_max_chars
-                else:
-                    max_width = zh_max_width(*dims) if dims else None
-                print(f"{args.sub_lang} caption cap: {(max_width or ZH_CHUNK_MAX_WIDTH) // 2} characters per cue")
-            build_master_srt(edl, edit_dir, subs_path, sub_lang=args.sub_lang, max_width=max_width)
+            subs_path = build_subtitles(edl, edit_dir, args, dims)
         elif edl.get("subtitles"):
             subs_path = resolve_subtitles_path(edl["subtitles"], edit_dir)
 

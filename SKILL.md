@@ -75,7 +75,7 @@ Helpers (`helpers/transcribe.py`, `helpers/render.py`, etc.) live alongside this
 - **`transcribe_batch.py <videos_dir>`** — 4-worker parallel transcription. Use for multi-take.
 - **`pack_transcripts.py --edit-dir <dir>`** — `transcripts/*.json` → `takes_packed.md` (phrase-level, break on silence ≥ 0.5s). Chinese transcripts are joined without spaces and converted to Traditional (Taiwan); Japanese transcripts are joined without spaces and left as they are.
 - **`timeline_view.py <video> <start> <end>`** — filmstrip + waveform PNG. On-demand visual drill-down. **Not a scan tool** — use it at decision points, not constantly.
-- **`render.py <edl.json> -o <out>`** — per-segment extract → concat → overlays (PTS-shifted) → subtitles LAST. `--preview` for 720p fast. `--build-subtitles` to generate master.srt inline. `--sub-lang en|zh-tw|ja` picks caption rules and font (default `en`); `--sub-font NAME` overrides the font; `--sub-margin PCT` sets the caption height (default from the frame: ~31% on 9:16, ~8% on 16:9).
+- **`render.py <edl.json> -o <out>`** — per-segment extract → concat → overlays (PTS-shifted) → subtitles LAST. `--preview` for 720p fast. `--build-subtitles` to generate master.srt inline (an existing master.srt with different content is kept as `master.srt.bak-<time>`); `--subtitles-only` builds just master.srt, no render — a draft to proofread or translate in seconds. `--sub-lang en|zh-tw|ja` picks caption rules and font (default `en`); `--sub-font NAME` overrides the font; `--sub-margin PCT` sets the caption height (default from the frame: ~31% on 9:16, ~8% on 16:9).
 - **`export_xml.py <edl.json>`** — EDL → `timeline.xml` (Final Cut Pro 7 XML) so an editor can finish the cut in DaVinci Resolve or Premiere. V1 clips point at the original sources with in/out points (every cut can be rolled open again), audio follows on one track per channel, overlays go on V2 (a sibling `.png` is used as a still when present). Subtitles are not in the XML — import `master.srt` separately. Grade, fades and loudnorm are not exported.
 - **`grade.py <in> -o <out>`** — ffmpeg filter chain grade. Presets + `--filter '<raw>'` for custom.
 
@@ -313,7 +313,7 @@ Match the source unless the user asked for something specific. Common targets: `
 }
 ```
 
-`grade` is a preset name or raw ffmpeg filter. `overlays` are rendered animation clips. `subtitles` is optional and applied LAST.
+`grade` is a preset name or raw ffmpeg filter. `overlays` are rendered animation clips. `subtitles` is optional and applied LAST. Once captions are proofread or translated, point `subtitles` at that file and render without `--build-subtitles` (which rebuilds master.srt from the transcripts). Proofread or translate only after the cut is locked: SRT times are on the output timeline, so any cut change means rebuilding and redoing those edits — tell the user before changing the cut.
 
 Optional, for per-speaker caption colours (`--build-subtitles`, any `--sub-lang`):
 
