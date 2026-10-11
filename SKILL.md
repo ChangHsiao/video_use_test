@@ -77,6 +77,7 @@ Helpers (`helpers/transcribe.py`, `helpers/render.py`, etc.) live alongside this
 - **`timeline_view.py <video> <start> <end>`** — filmstrip + waveform PNG. On-demand visual drill-down. **Not a scan tool** — use it at decision points, not constantly.
 - **`render.py <edl.json> -o <out>`** — per-segment extract → concat → overlays (PTS-shifted) → subtitles LAST. `--preview` for 720p fast. `--build-subtitles` to generate master.srt inline (an existing master.srt with different content is kept as `master.srt.bak-<time>`); `--subtitles-only` builds just master.srt, no render — a draft to proofread or translate in seconds. `--sub-lang en|zh-tw|ja` picks caption rules and font (default `en`); `--sub-font NAME` overrides the font; `--sub-margin PCT` sets the caption height (default from the frame: ~31% on 9:16, ~8% on 16:9).
 - **`export_xml.py <edl.json>`** — EDL → `timeline.xml` (Final Cut Pro 7 XML) so an editor can finish the cut in DaVinci Resolve or Premiere. V1 clips point at the original sources with in/out points (every cut can be rolled open again), audio follows on one track per channel, overlays go on V2 (a sibling `.png` is used as a still when present). Subtitles are not in the XML — import `master.srt` separately. Grade, fades and loudnorm are not exported.
+- **`bilingual_srt.py <translation.json>`** — your translation (draft cue groups + corrected source + translation) → `master_bilingual.srt` (translation on top, smaller source line below, speaker colours kept), single-language `master_<lang>.srt` files and `translation_review.md` for the user. Times and colours come from the draft; it stops on missing / overlapping cue numbers or a draft that changed since. See "Translation and bilingual captions".
 - **`grade.py <in> -o <out>`** — ffmpeg filter chain grade. Presets + `--filter '<raw>'` for custom.
 
 For animations, create `<edit>/animations/slot_<id>/` with `Bash` and spawn a sub-agent via the `Agent` tool.
@@ -204,6 +205,29 @@ Alignment=2,MarginV=90   ← replaced per frame, see above
 **Speaker colours — check the labels first.** Scribe's diarization mislabels turns, worst in cross-talk and between similar voices (a 2.5-minute two-host test had 3 wrong stretches, including the punchline). Before you add `speakers`: read the transcript for turns that contradict the content — someone addressed by name answering themselves, "I'm the one on stage" from the wrong person, a sentence split between speakers, a question and its answer under one id — and list each suspect range with the quote. The user listens and confirms; only then write `speaker_fixes`. Then render a `--preview` with the colours on and have the user **watch** it — confirming from a table of quotes is error-prone (in the same test two "fixes" made from the table were wrong and only showed up in the coloured preview). Ask the user which id is whom and what colours they want; don't guess names from voices.
 
 **Choosing the caption language.** Read it from the transcript (Scribe's `language_code`, or just the text), not from the user's chat language. State it in the strategy — e.g. "captions: Traditional Chinese, `zh-tw` style" — so the user confirms it in step 4. Pass `--sub-lang zh-tw` for Chinese speech and `--sub-lang ja` for Japanese; `render.py` warns on stderr if a Chinese or Japanese transcript is rendered with English rules.
+
+**Translation and bilingual captions.** When the user wants captions in another language (e.g. Japanese speech with Chinese on top, Japanese below), you write the words; `bilingual_srt.py` handles times, colours and checks. Only after the cut is locked.
+
+1. Build the source-language draft: `render.py <edl> --subtitles-only --sub-lang <source>` → `master.srt` (rule-based cues, speaker colours, `speaker_fixes` applied). Its cue numbers are your building blocks.
+2. If the user has a glossary (a file in their project — the path is in `project.md`), read it first. Names and terms follow it. A name or term not in it: translate your best guess, flag it with `check` and the source you found; never add it to the glossary yourself.
+3. Write `translation.json` next to the EDL:
+   ```json
+   {"draft": "master.srt", "source_lang": "ja", "target_lang": "zh-tw",
+    "cues": [{"from": 79, "to": 82, "src": "もう私はやばいって思ってるんで バスタオルを持っていこうと思って",
+              "tr": "我已經覺得一定會哭爆 所以打算帶條大浴巾去",
+              "check": "やばい: read as 'I'll cry' from the bath-towel line that follows"}],
+    "drop": []}
+   ```
+   - **Group by meaning.** Each group (`from`–`to`, inclusive draft cue numbers) is one complete thought. Rule-based cues follow pauses and width, not meaning — translated one by one, a verb-final language leaves fragments like 「去」「所以」「有」 alone on screen. Every draft cue goes in exactly one group or in `drop`.
+   - **One speaker's sentence on one line.** Whenever the same speaker's consecutive cues can be one translated line, make them one group — every pair, not only the short ones (a 2-second half-sentence still reads as a fragment: 「內容包含第2部終章結局的 / 朗讀劇」這句話啊」 belongs together). Tighten the wording to fit, never drop meaning. The source line may run much longer than the translation; that's the languages, not a problem — the two lines only need to mean the same thing. Quick back-and-forth between speakers (「確かに」「おお」) stays short; that is the material, not a grouping mistake.
+   - **Split at speaker changes** — a group shows in its first cue's colour. If a thought is too long for one line, split it into two groups that each read on their own; a group can't split inside a draft cue (rebuild the draft with a smaller `--sub-max-chars` if you need finer pieces).
+   - **`src` is the corrected source line**: fix mis-heard words (glossary "common mishearings"), drop stutters, keep the wording. The tool lists every change for the user.
+   - **`tr` translates the meaning, not the words.** Japanese (and other pro-drop languages) leaves out subjects and objects that the listener infers — 「マシュはヤバいですよ」 is about Mash's part of the story, 「受け取りたい」 needs *what*. Put back what the target language needs to make sense. Words that carry only tone (やばい, すごい) become what they mean here. Keep it spoken and in the speaker's voice. One line: ≤ the per-line cap — 18 full-width characters on 16:9 (wider than the 14 of single-language captions, which would chop one person's sentence into flashes), about 10 on 9:16. The source line, at 0.75 size, gets whatever fits the frame (~46 on 16:9).
+   - **`check` anything you inferred** rather than read: an omitted subject you filled in, a gesture you guessed (「こうやって」), a joke or term you're not sure of. Don't guess silently.
+4. Run `bilingual_srt.py translation.json`. Fix any warning (mixed speakers, line too wide) in `translation.json` and run it again.
+5. Give the user `translation_review.md` (flagged lines, source corrections, warnings) and a preview: EDL `"subtitles": "master_bilingual.srt"`, `render.py <edl> -o preview.mp4 --preview --sub-lang <target>` **without** `--build-subtitles`. Their corrections go into `translation.json`; rerun the tool, then render. The tool's outputs are rebuilt and overwritten on every run — never hand-edit them.
+
+If the cut changes later, the draft's cue numbers change too: `bilingual_srt.py` refuses a draft that differs from the one `translation.json` was written for. Rewrite the groups for the new draft (the old translations can be reused as text).
 
 Invent a third style if neither fits. Hard rules: subtitles LAST (Rule 1), output-timeline offsets (Rule 5).
 

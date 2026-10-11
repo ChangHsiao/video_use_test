@@ -540,17 +540,18 @@ ZH_MIN_VISIBLE_S = 0.2    # a cue still shorter than this (after merging and cla
 ZH_BORROW_ROOM_S = 0.3    # 短句到下一句開始不到這麼久時，向下一句借字（見 _merge_short_cues）
 
 
-def zh_max_width(width: int, height: int) -> int:
+def zh_max_width(width: int, height: int, cap: int = ZH_CHUNK_MAX_WIDTH) -> int:
     """Cue width cap that fits one caption line on a width×height frame.
 
     libass scales FontSize=18 against PlayResY=288, and a CJK glyph in the zh-tw
     style is about 0.75 of the font height wide (measured ~90 px at 1080×1920).
-    One character of slack; never above the landscape cap ZH_CHUNK_MAX_WIDTH.
+    One character of slack; never above cap (default: the landscape cap ZH_CHUNK_MAX_WIDTH).
     1080×1920 → 20 (10 characters), 1920×1080 → 28.
+    cap：雙語字幕（bilingual_srt.py）放寬上限用；預設值和原本相同。
     """
     char_px = 0.75 * 18 * height / 288
     per_line = int(width * 0.95 // char_px) - 1
-    return max(8, min(ZH_CHUNK_MAX_WIDTH, 2 * per_line))
+    return max(8, min(cap, 2 * per_line))
 
 
 def _cue_width(words: list[dict]) -> int:
