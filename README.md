@@ -4,6 +4,16 @@
 
 # video-use
 
+> **本 repo 改自 [browser-use/video-use](https://github.com/browser-use/video-use)**（MIT License，原作者版權見 `LICENSE`）。以下是我修改或新增的部分：
+>
+> - **繁體中文字幕**：依詞語和標點斷句、轉成繁體，每行字數依畫面寬度調整（直式約 10 字、橫式 14 字）（`helpers/zh_text.py`、`helpers/render.py`）
+> - **日文字幕**：日文不再被當成中文處理，太短的句子不會被刪掉
+> - **雙語字幕**：Claude 依照意思合併句子並翻譯，程式負責配時間軸和上色（`helpers/bilingual_srt.py`）
+> - **匯出剪輯時間軸**：輸出 DaVinci Resolve / Premiere 可以讀的 XML（`helpers/export_xml.py`）
+> - **字幕細節**：依說話者上色、依畫面比例調整字幕高度、重新算繪時保留校對過的字幕
+> - **Windows**：修正路徑含中文時算繪失敗的問題
+> - **測試**：`tests/` 中的 7 支（`test_bilingual_srt.py`、`test_export_xml.py`、`test_render_captions_ja.py`、`test_render_captions_zh.py`、`test_render_speakers.py`、`test_render_sub_margin.py`、`test_render_subtitles_backup.py`）
+
 Introducing **video-use** — edit videos with Claude Code. 100% open source.
 
 Drop raw footage in a folder, chat with Claude Code, get `final.mp4` back. Works for any content — talking heads, montages, tutorials, travel, interviews — without presets or menus.
