@@ -82,9 +82,18 @@ Helpers (`helpers/transcribe.py`, `helpers/render.py`, etc.) live alongside this
 
 For animations, create `<edit>/animations/slot_<id>/` with `Bash` and spawn a sub-agent via the `Agent` tool.
 
+## Recipes
+
+`recipes/` holds write-ups for specific video types: the workflow, the pitfalls hit while making one, and a worked example. Read the matching recipe before transcribing (see step 1 of the process).
+
+- `recipes/整理型短片.md` — long interview / podcast → 1–3 min vertical explainer with voice-over and the speaker's own lines
+- `recipes/上下分鏡.md` — vertical split screen (speaker top, B-roll bottom) with image overlays placed by you
+
+Recipes are not presets. Items under 預設 are starting points — ask the user. Items under 範例 describe one past video — never copy them as-is.
+
 ## The process
 
-1. **Inventory.** `ffprobe` every source. `transcribe_batch.py` on the directory. `pack_transcripts.py` to produce `takes_packed.md`. Sample one or two `timeline_view`s for a visual first impression.
+1. **Inventory.** `ffprobe` every source. If the request fits a recipe in `recipes/`, read it now, before transcribing — a recipe may change how you get the transcript. `transcribe_batch.py` on the directory. `pack_transcripts.py` to produce `takes_packed.md`. Sample one or two `timeline_view`s for a visual first impression.
 2. **Pre-scan for problems.** One pass over `takes_packed.md` to note verbal slips, obvious mis-speaks, or phrasings to avoid. Plain list, feed into the editor brief.
 3. **Converse.** Describe what you see in plain English. Ask questions *shaped by the material*. Collect: content type, target length/aspect, aesthetic/brand direction, pacing feel, must-preserve moments, must-cut moments, animation and grade preferences, subtitle needs. Do not use a fixed checklist — the right questions are different every time.
 4. **Propose strategy.** 4–8 sentences: shape, take choices, cut direction, animation plan, grade direction, subtitle style, length estimate. **Wait for confirmation.**

@@ -33,7 +33,7 @@ And one thing must be true about the current agent:
 ### 1. Clone to a stable path
 
 ```bash
-test -d ~/Developer/video-use || git clone https://github.com/browser-use/video-use ~/Developer/video-use
+test -d ~/Developer/video-use || git clone https://github.com/ChangHsiao/video_use_test ~/Developer/video-use
 cd ~/Developer/video-use
 ```
 
@@ -63,7 +63,14 @@ command -v yt-dlp >/dev/null || brew install yt-dlp     # optional
 
 # Arch
 # sudo pacman -S ffmpeg yt-dlp
+
+# Windows (winget)
+# winget install Gyan.FFmpeg
+# winget install yt-dlp.yt-dlp     # optional
+# winget install astral-sh.uv      # if uv is missing
 ```
+
+On Windows, open a new shell after `winget install` — the current one won't see the new PATH.
 
 If `brew` / `apt` / `pacman` requires a sudo prompt, tell the user the exact command and wait. Do not invent a password.
 
@@ -76,6 +83,12 @@ Figure out which agent you are running under, and register once. A symlink of th
     ```bash
     mkdir -p ~/.claude/skills
     ln -sfn ~/Developer/video-use ~/.claude/skills/video-use
+    ```
+
+    On Windows, `ln -s` in Git Bash silently copies the directory instead of linking it, so later `git pull`s won't reach the skill. Either clone straight into `~/.claude/skills/video-use` in step 1, or create a junction (no admin rights needed) from PowerShell:
+
+    ```powershell
+    New-Item -ItemType Junction -Path "$HOME\.claude\skills\video-use" -Target "$HOME\Developer\video-use"
     ```
 
 - **Codex** (`$CODEX_HOME` set, or `~/.codex/` present):

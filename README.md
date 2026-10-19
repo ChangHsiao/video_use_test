@@ -11,7 +11,8 @@
 > - **雙語字幕**：Claude 依照意思合併句子並翻譯，程式負責配時間軸和上色（`helpers/bilingual_srt.py`）
 > - **匯出剪輯時間軸**：輸出 DaVinci Resolve / Premiere 可以讀的 XML（`helpers/export_xml.py`）
 > - **字幕細節**：依說話者上色、依畫面比例調整字幕高度、重新算繪時保留校對過的字幕
-> - **Windows**：修正路徑含中文時算繪失敗的問題
+> - **剪輯做法（recipes）**：「整理型短片」「上下分鏡」兩類影片的流程和踩過的坑，AI 做這類影片前會先讀（`recipes/`）
+> - **Windows**：修正路徑含中文時算繪失敗的問題；安裝說明補上 Windows 的做法
 > - **測試**：`tests/` 中的 7 支（`test_bilingual_srt.py`、`test_export_xml.py`、`test_render_captions_ja.py`、`test_render_captions_zh.py`、`test_render_speakers.py`、`test_render_sub_margin.py`、`test_render_subtitles_backup.py`）
 
 Introducing **video-use** — edit videos with Claude Code. 100% open source.
@@ -35,7 +36,7 @@ Try video-use in [Browser Use Cloud](https://cloud.browser-use.com/v4?utm_campai
 Paste into Claude Code, Codex, Hermes, Openclaw, or any agent with shell access:
 
 ```text
-Set up https://github.com/browser-use/video-use for me.
+Set up https://github.com/ChangHsiao/video_use_test for me.
 
 Read install.md first to install this repo, wire up ffmpeg, register the skill with whichever agent you're running under, and set up the ElevenLabs API key — ask me to paste it when you need it. Then read SKILL.md for daily usage, and always read helpers/ because that's where the editing scripts live. After install, don't transcribe anything on your own — just tell me it's ready and wait for me to drop footage into a folder.
 ```
@@ -63,15 +64,17 @@ If you'd rather do it by hand:
 
 ```bash
 # 1. Clone and symlink into your agent's skills directory
-git clone https://github.com/browser-use/video-use ~/Developer/video-use
+git clone https://github.com/ChangHsiao/video_use_test ~/Developer/video-use
 ln -sfn ~/Developer/video-use ~/.claude/skills/video-use        # Claude Code
 # ln -sfn ~/Developer/video-use ~/.codex/skills/video-use       # Codex
+# Windows: Git Bash's ln -s makes a copy, not a link. Clone straight into
+# ~/.claude/skills/video-use instead, or see install.md step 4 for a junction.
 
 # 2. Install deps
 cd ~/Developer/video-use
 uv sync                         # or: pip install -e .
-brew install ffmpeg             # required
-brew install yt-dlp             # optional, for downloading online sources
+brew install ffmpeg             # required (Windows: winget install Gyan.FFmpeg)
+brew install yt-dlp             # optional, for downloading online sources (Windows: winget install yt-dlp.yt-dlp)
 
 # 3. Add your ElevenLabs API key
 cp .env.example .env
