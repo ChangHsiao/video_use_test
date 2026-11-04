@@ -91,6 +91,14 @@ For animations, create `<edit>/animations/slot_<id>/` with `Bash` and spawn a su
 
 Recipes are not presets. Items under 預設 are starting points — ask the user. Items under 範例 describe one past video — never copy them as-is.
 
+## SOPs
+
+`sop/` holds step-by-step procedures for one kind of video, with defaults already decided.
+
+- `sop/科普短片.md` — science / tech explainer short (~2.5 min vertical) made from talks, launches or official videos: script, storyboard, voice-over, B-roll
+
+When the user asks for a science / tech explainer short, read `sop/科普短片.md` before transcribing and follow it. This is an exception to Principle 5 and step 3: use its defaults and stop only at its checkpoints instead of asking open questions. Its checkpoint 2 (企劃) is the strategy of step 4, so Hard Rule 11 still applies: nothing is cut or rendered before the user approves it. Outside an SOP, the normal process applies.
+
 ## The process
 
 1. **Inventory.** `ffprobe` every source. If the request fits a recipe in `recipes/`, read it now, before transcribing — a recipe may change how you get the transcript. `transcribe_batch.py` on the directory. `pack_transcripts.py` to produce `takes_packed.md`. Sample one or two `timeline_view`s for a visual first impression.
