@@ -13,6 +13,7 @@ dependencies = [
     "jieba>=0.42.1",
     "opencc>=1.4.2",
     "budoux>=0.9",
+    "yt-dlp>=2026.10.21",
 ]
 
 [project.optional-dependencies]

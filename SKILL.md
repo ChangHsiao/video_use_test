@@ -71,6 +71,7 @@ Helpers (`helpers/transcribe.py`, `helpers/render.py`, etc.) live alongside this
 
 ## Helpers
 
+- **`fetch_youtube.py <url> --out-dir <dir>`** — downloads a YouTube video (H.264 mp4, ≤1080p) and its captions as a Scribe-format transcript in `<dir>/edit/transcripts/`, no transcription credits. Files are named by video ID unless `--name`; `--lang` picks the caption language (default `en`); `--no-video` fetches captions only. Never overwrites existing files. When it reports YouTube blocked the download, ask the user to download the video by hand under the printed name — don't retry.
 - **`transcribe.py <video>`** — single-file Scribe call. `--num-speakers N` optional. Cached.
 - **`transcribe_batch.py <videos_dir>`** — 4-worker parallel transcription. Use for multi-take.
 - **`pack_transcripts.py --edit-dir <dir>`** — `transcripts/*.json` → `takes_packed.md` (phrase-level, break on silence ≥ 0.5s). Chinese transcripts are joined without spaces and converted to Traditional (Taiwan); Japanese transcripts are joined without spaces and left as they are.
