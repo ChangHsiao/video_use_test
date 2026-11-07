@@ -1,129 +1,59 @@
-<p align="center">
-  <img src="static/video-use-banner.png" alt="video-use" width="100%">
-</p>
+# 科普短片 skill
 
-# video-use
+把發表會、講座、訪談等影片，做成 2 分半的直式科普短片。給素材，回答 5 個問題。
 
-> **本 repo 改自 [browser-use/video-use](https://github.com/browser-use/video-use)**（MIT License，原作者版權見 `LICENSE`）。以下是我修改或新增的部分：
->
-> - **繁體中文字幕**：依詞語和標點斷句、轉成繁體，每行字數依畫面寬度調整（直式約 10 字、橫式 14 字）（`helpers/zh_text.py`、`helpers/render.py`）
-> - **日文字幕**：日文不再被當成中文處理，太短的句子不會被刪掉
-> - **雙語字幕**：Claude 依照意思合併句子並翻譯，程式負責配時間軸和上色（`helpers/bilingual_srt.py`）
-> - **匯出剪輯時間軸**：輸出 DaVinci Resolve / Premiere 可以讀的 XML（`helpers/export_xml.py`）
-> - **字幕細節**：依說話者上色、依畫面比例調整字幕高度、重新算繪時保留校對過的字幕
-> - **剪輯做法（recipes）**：「整理型短片」「上下分鏡」兩類影片的流程和踩過的坑，AI 做這類影片前會先讀（`recipes/`）
-> - **科普短片 SOP**：給素材、說「做一支科普短片」，只在 5 個確認點回答，其他用預設值做（使用說明：`sop/使用說明.md`）
-> - **YouTube 下載**：貼網址就下載影片和字幕，字幕直接當逐字稿用，不花轉錄額度（`helpers/fetch_youtube.py`）
-> - **配音字幕對齊（實驗性）**：沒有逐字時間的配音（例如在 ElevenLabs 網站手動生成的），依停頓算出每句字幕的時間，可能不準的句子列成抽查清單。只測過中文；配音要加速的話，先加速再跑（`helpers/align_voice.py`）
-> - **說明動畫零件庫（Remotion）**：背景、標題、示意圖標籤、標註、箭頭、粒子流等零件，動畫時間直接對齊字幕，附一個範例（`templates/remotion/`）。只在 WSL 測過，Windows、Mac 沒測過
-> - **Windows**：修正路徑含中文時算繪失敗的問題；安裝說明補上 Windows 的做法
-> - **測試**：`tests/` 中的 9 支（`test_align_voice.py`、`test_bilingual_srt.py`、`test_export_xml.py`、`test_fetch_youtube.py`、`test_render_captions_ja.py`、`test_render_captions_zh.py`、`test_render_speakers.py`、`test_render_sub_margin.py`、`test_render_subtitles_backup.py`）
+Claude 會讀完素材、挑主題、寫旁白稿、排分鏡、做說明動畫、上中英字幕。風格、長度、節奏都有預設值，你只在關鍵的地方做決定。
 
-Introducing **video-use** — edit videos with Claude Code. 100% open source.
+## 需要
 
-Drop raw footage in a folder, chat with Claude Code, get `final.mp4` back. Works for any content — talking heads, montages, tutorials, travel, interviews — without presets or menus.
+| 項目 | 用途 | 費用 |
+|---|---|---|
+| [Claude Code](https://code.claude.com/docs/en/setup) | 執行這個 skill | Claude Pro 以上 |
+| [ElevenLabs](https://elevenlabs.io) | 轉錄、配音 | 免費方案每月約可轉錄 30 分鐘；配音要在網站上手動生成 |
+| [Node.js](https://nodejs.org) | 說明動畫（Remotion） | 免費；Remotion 4 人以上的公司要買授權 |
 
-Try video-use in [Browser Use Cloud](https://cloud.browser-use.com/v4?utm_campaign=video-use-use-in-cloud&utm_source=github).
+## 安裝
 
-## What it does
-
-- **Cuts out filler words** (`umm`, `uh`, false starts) and dead space between takes
-- **Auto color grades** every segment (warm cinematic, neutral punch, or any custom ffmpeg chain)
-- **30ms audio fades** at every cut so you never hear a pop
-- **Burns subtitles** in your style — 2-word UPPERCASE chunks by default, fully customizable
-- **Generates animation overlays** via [HyperFrames](https://github.com/heygen-com/hyperframes), [Remotion](https://www.remotion.dev/), [Manim](https://www.manim.community/), or PIL — spawned in parallel sub-agents, one per animation
-- **Self-evaluates the rendered output** at every cut boundary before showing you anything
-- **Persists session memory** in `project.md` so next week's session picks up where you left off
-
-## Setup prompt
-
-Paste into Claude Code, Codex, Hermes, Openclaw, or any agent with shell access:
+把這段話貼給 Claude Code：
 
 ```text
-Set up https://github.com/ChangHsiao/video_use_test for me.
-
-Read install.md first to install this repo, wire up ffmpeg, register the skill with whichever agent you're running under, and set up the ElevenLabs API key — ask me to paste it when you need it. Then read SKILL.md for daily usage, and always read helpers/ because that's where the editing scripts live. After install, don't transcribe anything on your own — just tell me it's ready and wait for me to drop footage into a folder.
+幫我安裝 https://github.com/ChangHsiao/video_use_test 。先讀 install.md 完成安裝：下載這個 repo、設定 ffmpeg、把 skill 註冊到你正在用的 agent、設定 ElevenLabs API key（需要時請我貼給你）。接著讀 SKILL.md 了解怎麼用，helpers/ 裡是剪輯用的程式。裝好之後不要自己轉錄，告訴我裝好了，等我給素材。
 ```
 
-The agent handles the clone, dependencies, skill registration, and prompts you once for your ElevenLabs API key (grab one at [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys)).
+手動安裝見 [install.md](install.md)。
 
-Then point your agent at a folder of raw takes:
+## 使用
 
-```bash
-cd /path/to/your/videos
-claude    # or codex, hermes, etc.
-```
+把素材放進一個新資料夾，在那裡打開 Claude Code，說：
 
-For always-on editing from your own VPS or Telegram, run the agent through [Browser Use Box](https://browser-use.com/bux). [Watch the 15-second demo](https://www.tiktok.com/@browser_use/video/7639824093721758989).
+> 做一支科普短片
 
-And in the session:
+一支片用一個資料夾。轉錄、配音、生成講者會花額度，Claude 會先問過你。
 
-> edit these into a launch video
+過程中它會停下來 5 次：
 
-It inventories the sources, proposes a strategy, waits for your OK, then produces `edit/final.mp4` next to your sources. All outputs live in `<videos_dir>/edit/` — the skill directory stays clean.
+| 時機 | 你會看到 | 你要決定 |
+|---|---|---|
+| 開始 | 素材清單 | 有沒有漏、逐字稿怎麼取得 |
+| 讀完素材 | 企劃：主題、標題、大綱、風格 | 照推薦做，或指定要換的項目；要不要講者、用哪個配音聲音 |
+| 寫完稿子 | 稿子和分鏡表 | 要改的句子和畫面 |
+| 合成之前 | 樣張和 10～15 秒樣片 | 要改哪一張 |
+| 完成 | 成品和品質檢查結果 | 修改意見 |
 
-## Manual install
+所有產出放在素材資料夾的 `edit/`：內容目錄、企劃、旁白稿（每句附原片出處）、分鏡表、字幕和影片。
 
-If you'd rather do it by hand:
+只使用你有權使用的素材，公開發布前先確認授權。
 
-```bash
-# 1. Clone and symlink into your agent's skills directory
-git clone https://github.com/ChangHsiao/video_use_test ~/Developer/video-use
-ln -sfn ~/Developer/video-use ~/.claude/skills/video-use        # Claude Code
-# ln -sfn ~/Developer/video-use ~/.codex/skills/video-use       # Codex
-# Windows: Git Bash's ln -s makes a copy, not a link. Clone straight into
-# ~/.claude/skills/video-use instead, or see install.md step 4 for a junction.
+## 目前狀態
 
-# 2. Install deps
-cd ~/Developer/video-use
-uv sync                         # or: pip install -e .
-brew install ffmpeg             # required (Windows: winget install Gyan.FFmpeg)
-brew install yt-dlp             # optional, for downloading online sources (Windows: winget install yt-dlp.yt-dlp)
+2026 年 11 月。
 
-# 3. Add your ElevenLabs API key
-cp .env.example .env
-$EDITOR .env                    # ELEVENLABS_API_KEY=...
-```
+- 從素材到分鏡表，每一步都有寫好的做法；配音到成品只定了要交出什麼，做法由 Claude 判斷，測試時做到預覽影片
+- 說明動畫只在 Linux（WSL）測過
+- 手動生成的配音沒有逐字時間，字幕時間從停頓推算，不確定的句子會列出來請你檢查
+- 目前只有一種畫面風格（暗色科技風）
+- 價格和方案以各服務官網為準
 
-## How it works
+## 來源
 
-The LLM never watches the video. It **reads** it — through two layers that together give it everything it needs to cut with word-boundary precision.
-
-<p align="center">
-  <img src="static/timeline-view.svg" alt="timeline_view composite — filmstrip + speaker track + waveform + word labels + silence-gap cut candidates" width="100%">
-</p>
-
-**Layer 1 — Audio transcript (always loaded).** One ElevenLabs Scribe call per source gives word-level timestamps, speaker diarization, and audio events (`(laughter)`, `(applause)`, `(sigh)`). All takes pack into a single ~12KB `takes_packed.md` — the LLM's primary reading view.
-
-```
-## C0103  (duration: 43.0s, 8 phrases)
-  [002.52-005.36] S0 Ninety percent of what a web agent does is completely wasted.
-  [006.08-006.74] S0 We fixed this.
-```
-
-**Layer 2 — Visual composite (on demand).** `timeline_view` produces a filmstrip + waveform + word labels PNG for any time range. Called only at decision points — ambiguous pauses, retake comparisons, cut-point sanity checks.
-
-> Naive approach: 30,000 frames × 1,500 tokens = **45M tokens of noise**.
-> Video Use: **12KB text + a handful of PNGs**.
-
-Same idea as browser-use giving an LLM a structured DOM instead of a screenshot — but for video.
-
-## Pipeline
-
-```
-Transcribe ──> Pack ──> LLM Reasons ──> EDL ──> Render ──> Self-Eval
-                                                              │
-                                                              └─ issue? fix + re-render (max 3)
-```
-
-The self-eval loop runs `timeline_view` on the _rendered output_ at every cut boundary — catches visual jumps, audio pops, hidden subtitles. You see the preview only after it passes.
-
-## Design principles
-
-1. **Text + on-demand visuals.** No frame-dumping. The transcript is the surface.
-2. **Audio is primary, visuals follow.** Cuts come from speech boundaries and silence gaps.
-3. **Ask → confirm → execute → self-eval → persist.** Never touch the cut without strategy approval.
-4. **Zero assumptions about content type.** Look, ask, then edit.
-5. **12 hard rules, artistic freedom elsewhere.** Production-correctness is non-negotiable. Taste isn't.
-
-See [`SKILL.md`](./SKILL.md) for the full production rules and editing craft.
+改自 [browser-use/video-use](https://github.com/browser-use/video-use)（MIT License，原作者版權見 [LICENSE](LICENSE)）。原本的剪輯功能都還在，例如剪掉口誤和空白、調色、上字幕，另外加了繁體中文與雙語字幕、匯出 DaVinci Resolve 時間軸。說「幫我剪這支影片」就是一般剪輯，詳見 [SKILL.md](SKILL.md)。
