@@ -136,7 +136,11 @@ Scribe (ElevenLabs) does all transcription. Without a key, nothing transcribes.
       https://api.elevenlabs.io/v1/user
     ```
 
-    `200` means the key works. `401` means the user pasted a wrong/expired key — ask once more and stop. Anything else (network, 5xx), move on and verify during first real transcription.
+    `200` means the key works. On `401`/`402`/`403`, re-run without `-o /dev/null` and read the error code in the response body before telling the user anything — the status code alone is not reliable (a key missing permissions returned `401` with `missing_permissions` in testing, while the docs say `403 insufficient_permissions`):
+    - permission error (`missing_permissions`, `insufficient_permissions`): the key is valid. Tell the user to enable Speech to Text, Text to Speech, User and Voices for this key on the API keys page; don't ask for a new key.
+    - invalid or expired key (`invalid_api_key`, or a `401` mentioning expiry): ask the user once for a new key, then stop.
+    - out of credits (`402`, `insufficient_credits`): the key is fine; tell the user to check their plan's remaining credits.
+    Anything else (network, 5xx), move on and verify during first real transcription.
 
 ### 6. Verify end-to-end
 
