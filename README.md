@@ -12,7 +12,7 @@
 > - **匯出剪輯時間軸**：輸出 DaVinci Resolve / Premiere 可以讀的 XML（`helpers/export_xml.py`）
 > - **字幕細節**：依說話者上色、依畫面比例調整字幕高度、重新算繪時保留校對過的字幕
 > - **剪輯做法（recipes）**：「整理型短片」「上下分鏡」兩類影片的流程和踩過的坑，AI 做這類影片前會先讀（`recipes/`）
-> - **科普短片 SOP**：給素材、說「做一支科普短片」，只在 4 個確認點回答，其他用預設值做（使用說明：`sop/使用說明.md`）
+> - **科普短片 SOP**：給素材、說「做一支科普短片」，只在 5 個確認點回答，其他用預設值做（使用說明：`sop/使用說明.md`）
 > - **YouTube 下載**：貼網址就下載影片和字幕，字幕直接當逐字稿用，不花轉錄額度（`helpers/fetch_youtube.py`）
 > - **Windows**：修正路徑含中文時算繪失敗的問題；安裝說明補上 Windows 的做法
 > - **測試**：`tests/` 中的 8 支（`test_bilingual_srt.py`、`test_export_xml.py`、`test_fetch_youtube.py`、`test_render_captions_ja.py`、`test_render_captions_zh.py`、`test_render_speakers.py`、`test_render_sub_margin.py`、`test_render_subtitles_backup.py`）
