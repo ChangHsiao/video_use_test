@@ -267,6 +267,8 @@ For HyperFrames slots, scaffold the slot inside `edit/animations/slot_<id>/` wit
 
 For Remotion slots, keep the Remotion project isolated inside the same slot directory, scaffold with `npx create-video@latest` or install Remotion locally there, render the composition to `render.mp4` with the project-local `remotion render` command, and verify duration and dimensions with `ffprobe`.
 
+For a science / tech explainer short (`sop/科普短片.md`), start from the parts library in `templates/remotion/` instead of an empty project; its README covers setup, the parts and timing animations to `cues.json`.
+
 None is mandatory. Invent hybrids if useful (e.g., PIL background with a HyperFrames or Remotion layer on top).
 
 **Duration rules of thumb, context-dependent:**

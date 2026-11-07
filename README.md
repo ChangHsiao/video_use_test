@@ -15,6 +15,7 @@
 > - **科普短片 SOP**：給素材、說「做一支科普短片」，只在 5 個確認點回答，其他用預設值做（使用說明：`sop/使用說明.md`）
 > - **YouTube 下載**：貼網址就下載影片和字幕，字幕直接當逐字稿用，不花轉錄額度（`helpers/fetch_youtube.py`）
 > - **配音字幕對齊（實驗性）**：沒有逐字時間的配音（例如在 ElevenLabs 網站手動生成的），依停頓算出每句字幕的時間，可能不準的句子列成抽查清單。只測過中文；配音要加速的話，先加速再跑（`helpers/align_voice.py`）
+> - **說明動畫零件庫（Remotion）**：背景、標題、示意圖標籤、標註、箭頭、粒子流等零件，動畫時間直接對齊字幕，附一個範例（`templates/remotion/`）。只在 WSL 測過，Windows、Mac 沒測過
 > - **Windows**：修正路徑含中文時算繪失敗的問題；安裝說明補上 Windows 的做法
 > - **測試**：`tests/` 中的 9 支（`test_align_voice.py`、`test_bilingual_srt.py`、`test_export_xml.py`、`test_fetch_youtube.py`、`test_render_captions_ja.py`、`test_render_captions_zh.py`、`test_render_speakers.py`、`test_render_sub_margin.py`、`test_render_subtitles_backup.py`）
 
