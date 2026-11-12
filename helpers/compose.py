@@ -3,7 +3,7 @@
 用法（在 skill 資料夾）：
     uv run --project . python helpers/compose.py <資料夾>/edit/合成.json [--full] [--samples] [--clip 開始秒數 [長度]] [--font 字型檔]
 
-同一個資料夾要有 align_voice.py 的輸出 cues.json 和它讀的 voice_lines.json。格式見 docs 的規格 specs/2026-11-10-compose.md。
+同一個資料夾要有 align_voice.py 的輸出 cues.json 和它讀的 voice_lines.json。合成.json 的格式和使用步驟見 sop/科普短片.md 第 13 步。
 """
 
 import json
@@ -47,7 +47,7 @@ PICTURES = ("broll", "animation", "presenter")  # 鏡頭底下的畫面，三選
 FPS = 30
 
 # 換鏡頭檢查：看 B-roll 頭尾各 0.6 秒，某一格的變化比前後各 4 格的中位數大 2 倍以上就算換畫面。
-# 2026-11-11 用 11/6 試做的 26 個 B-roll 鏡頭頭尾實測：13 處真的換畫面都抓到，沒有誤報。
+# 2026-11-11 用 11/6 試做的 26 個 B-roll 鏡頭頭尾實測：13 處真的換畫面都抓到，誤報 1 次（推進器突然噴煙）。
 # 不用 ffmpeg 的 scene，因為它在暗的畫面會漏抓；不和整段平常的變化比，因為講者揮手這類畫面會被誤認
 CUT_WINDOW = 0.6
 CUT_NEIGHBORS = 4
