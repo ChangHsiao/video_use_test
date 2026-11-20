@@ -1,4 +1,5 @@
-// 說明動畫的色票、字型、底色和字級；換風格只改這個檔案（預設值照 sop/風格_暗色科技風.md）
+// 說明動畫的色票、字型、底色和字級。預設值是「暗色科技風」（styles/暗色科技風/STYLE.md）；
+// 換風格時用 styles/<風格名稱>/theme.ts 蓋過這個檔案（見 styles/README.md）
 
 export const theme = {
   font: '"Noto Sans CJK TC", sans-serif',
@@ -13,6 +14,7 @@ export const theme = {
     subtle: '#aab3bf',
     text: '#ffffff',
     outline: '#0b0d10', // 文字描邊，讓字壓在圖形上也看得清楚
+    accent: '#ff5a3c', // 標題重點字
   },
   background: {
     inner: '#1c2129',

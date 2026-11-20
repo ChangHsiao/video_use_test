@@ -102,6 +102,15 @@ Recipes are not presets. Items under 預設 are starting points — ask the user
 
 When the user asks for a science / tech explainer short, read `sop/科普短片.md` before transcribing and follow it. This is an exception to Principle 5 and step 3: use its defaults and stop only at its checkpoints instead of asking open questions. Its checkpoint 2 (企劃) is the strategy of step 4, so Hard Rule 11 still applies: nothing is cut or rendered before the user approves it. Outside an SOP, the normal process applies.
 
+## Styles
+
+`styles/` holds the look of one kind of video: layout numbers, colors, fonts, transitions, plus its assets.
+
+Each style is one folder and they are swappable; the folder contract and how to switch or add one are in `styles/README.md`. For the 科普短片 SOP the style named in the plan goes into `合成.json` as `"style": "<folder name>"` (`compose.py` reads that folder's `style.json`; default `暗色科技風`), and the folder's `theme.ts` / `manim.md` restyle the explainer animations.
+
+- `styles/暗色科技風/` — dark tech look, the default for the 科普短片 SOP
+- `styles/3b1b/` — pure-black, step-by-step explainer look distilled from the 3b1b/videos scene code: one colour per concept, yellow only for "look here", new objects grow out of existing ones, pause after every move. Manim adapter in `manim.md`, sample scene `example_scene.py`
+
 ## The process
 
 1. **Inventory.** `ffprobe` every source. If the request fits a recipe in `recipes/`, read it now, before transcribing — a recipe may change how you get the transcript. `transcribe_batch.py` on the directory. `pack_transcripts.py` to produce `takes_packed.md`. Sample one or two `timeline_view`s for a visual first impression.

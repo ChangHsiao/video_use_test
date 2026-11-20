@@ -3,7 +3,7 @@
 | 項目 | 內容 |
 |---|---|
 | 適用範圍 | 用 Remotion 做說明動畫：背景、標題、標註、箭頭、粒子流等零件，時間對齊字幕 |
-| 相關文件 | 什麼時候用、畫面規矩：`sop/科普短片.md` 第 11 步；顏色和字級的來源：`sop/風格_暗色科技風.md`；字幕時間：`helpers/align_voice.py` |
+| 相關文件 | 什麼時候用、畫面規矩：`sop/科普短片.md` 第 11 步；顏色和字級的來源：`styles/<風格名稱>/STYLE.md`（預設是暗色科技風）；換風格：`styles/README.md`；字幕時間：`helpers/align_voice.py` |
 | 狀態 | 只在 WSL 測過，Windows、Mac 沒測過 |
 
 ## 怎麼開始
@@ -41,7 +41,7 @@ npm install
 
 1. 新增 `src/<名稱>.tsx`，用零件組畫面；零件庫沒有的圖形（車身、器材、人體構造）自己用 SVG 畫
 2. 在 `src/Root.tsx` 登記一行 `<Composition id="<名稱>" ... durationInFrames={秒數 × 30} />`；用不到的範例那行可以刪掉
-3. 顏色只用 `theme.colors` 裡的；換風格時只改 `src/theme.ts`
+3. 顏色只用 `theme.colors` 裡的；換風格時用 `styles/<風格名稱>/theme.ts` 蓋過 `src/theme.ts`，不要在零件或動畫裡寫死顏色
 
 ## 時間對齊字幕
 

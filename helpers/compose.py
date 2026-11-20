@@ -3,7 +3,8 @@
 用法（在 skill 資料夾）：
     uv run --project . python helpers/compose.py <資料夾>/edit/合成.json [--full] [--samples] [--clip 開始秒數 [長度]] [--font 字型檔]
 
-同一個資料夾要有 align_voice.py 的輸出 cues.json 和它讀的 voice_lines.json。合成.json 的格式和使用步驟見 sop/科普短片.md 第 13 步。
+同一個資料夾要有 align_voice.py 的輸出 cues.json 和它讀的 voice_lines.json。合成.json 的格式和使用步驟見 sop/科普短片.md 第 13 步；
+畫面風格由 合成.json 的 "style" 指定（styles/ 底下的資料夾名稱），沒寫就用「暗色科技風」。
 """
 
 import json
@@ -20,21 +21,11 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 
-# ---------- 風格表：位置、字級、顏色都照 sop/風格_暗色科技風.md，座標以 1080×1920 為準 ----------
-COLORS = {
-    "red": "#ff5a3c", "cyan": "#7fd8ff", "amber": "#ffb340", "green": "#5be08a", "white": "#ffffff",
-    "line": "#c9d1db", "dim": "#8a93a0", "small": "#aab3bf", "sub": "#ffd43b",
-}
-NUMBER_COLORS = ("red", "cyan", "amber", "green", "white")  # 數字卡可以用的顏色
+# ---------- 風格：顏色、字級、位置從 styles/<風格名稱>/style.json 讀（欄位說明見 styles/README.md），座標以 1080×1920 為準 ----------
+STYLES_DIR = Path(__file__).resolve().parents[1] / "styles"
+DEFAULT_STYLE = "暗色科技風"  # 合成.json 沒寫 style 時用這個
+STYLE = {}  # 目前用的風格，由 use_style() 換；檔案最後會先載入預設風格
 WIDTH, HEIGHT = 1080, 1920
-BROLL_TOP = 560  # 橫式 B-roll 原畫面離頂部的距離（上方留給頂部標題）
-BG_ZOOM = 1.15  # 橫式 B-roll 的背景：同一個畫面放大、模糊、調暗，填滿上下空白
-BG_DIM = 0.45
-# 疊加層：(字級, 中心 y)。值照 11/6 試做的 overlay.py
-TITLE_STYLE = (52, 120)  # 頂部標題，整支片都在
-NUMBER_STYLE = {"big": (120, 1300), "label": (42, 1405), "note": (30, 1465)}  # 數字卡：大數字、說明、估算小字
-SECTION_STYLE = {"small": (40, 850), "big": (110, 960)}  # 段落標題卡
-SUB_STYLE = {"zh": (58, 1640), "en": (36, 1712)}  # 字幕：中文黃色、英文白色
 TEXT_MAX_W = 1000  # 一行最寬多少，超過就縮小字級
 SECTION_LEAD = 0.3  # 段落標題卡在切點前幾秒開始淡入，切點那一格完整顯示（11/6 有 2 處閃是因為切過去才淡入）
 SECTION_HOLD = 1.8  # 段落標題卡從切點起顯示幾秒（最後 0.3 秒淡出）
@@ -84,7 +75,49 @@ def find_cue(cues, text, after=-1):
     return hits[0]
 
 
-# 讀 合成.json 並檢查欄位：畫面三選一（或只有段落標題）、B-roll 要有起點、素材檔要存在；路徑換成完整路徑
+# "#rrggbb" → (r, g, b)
+def hex_rgb(color):
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", str(color)):
+        raise ValueError(f"顏色要寫成 #rrggbb：{color}")
+    return tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
+
+
+# 讀 styles/<name>/style.json 並檢查 compose.py 會用到的欄位；找不到、缺欄位、用到沒定義的顏色都報錯
+def load_style(name):
+    path = STYLES_DIR / str(name) / "style.json"
+    if not path.is_file():
+        have = sorted(d.name for d in STYLES_DIR.iterdir() if (d / "style.json").is_file())
+        raise ComposeError(f"找不到風格「{name}」（{path}）。可用的風格：{'、'.join(have)}")
+    try:
+        style = json.loads(path.read_text(encoding="utf-8"))
+        colors = style["colors"]
+        specs = [style["title"], *style["number"].values(), *style["section"]["text"].values(),
+                 *style["subtitle"].values()]
+        used = [s["color"] for s in specs] + [style["title"]["accent"], *style["number_colors"]]
+        for s in specs:
+            float(s["size"]), float(s["y"])
+        for k in ("top", "bg_zoom", "bg_dim"):
+            float(style["broll"][k])
+        inner, outer = style["section"]["background"]
+        for c in (*colors.values(), inner, outer):
+            hex_rgb(c)
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+        raise ComposeError(f"{path} 的格式不對：{e!r}（欄位說明見 styles/README.md）")
+    missing = sorted({c for c in used if c not in colors})
+    if missing:
+        raise ComposeError(f"{path} 用到 colors 裡沒有的顏色：{'、'.join(missing)}")
+    style["name"] = str(name)
+    return style
+
+
+# 換成另一個風格：之後畫的疊加層、B-roll 版面都照它
+def use_style(name):
+    global STYLE
+    STYLE = load_style(name)
+    return STYLE
+
+
+# 讀 合成.json 並檢查欄位（style 是風格名稱，沒寫就用預設風格）：畫面三選一（或只有段落標題）、B-roll 要有起點、素材檔要存在；路徑換成完整路徑
 def load_plan(path):
     path = Path(path)
     try:
@@ -94,6 +127,7 @@ def load_plan(path):
     shots = data.get("shots") or []
     if not shots:
         raise ComposeError(f"{path.name} 沒有 shots")
+    style = use_style(data.get("style") or DEFAULT_STYLE)
     out = []
     for i, raw in enumerate(shots, 1):
         where = f"第 {i} 個鏡頭（from「{raw.get('from', '')}」）"
@@ -118,13 +152,14 @@ def load_plan(path):
         if number:
             if not number.get("big") or not number.get("label"):
                 raise ComposeError(f"{where}的 number 要有 big 和 label")
-            if number.get("color", "white") not in NUMBER_COLORS:
-                raise ComposeError(f"{where}的數字卡顏色 {number['color']} 不在風格表裡（可用：{'、'.join(NUMBER_COLORS)}）")
+            if "color" in number and number["color"] not in style["number_colors"]:
+                raise ComposeError(f"{where}的數字卡顏色 {number['color']} 不在風格「{style['name']}」裡"
+                                   f"（可用：{'、'.join(style['number_colors'])}）")
         section = raw.get("section")
         if section is not None and (not section.get("small") or not section.get("big")):
             raise ComposeError(f"{where}的 section 要有 small 和 big")
         out.append(shot)
-    return {"title": data.get("title") or {}, "shots": out, "path": path}
+    return {"title": data.get("title") or {}, "shots": out, "path": path, "style": style["name"]}
 
 
 # 算每個鏡頭的開始、結束秒數；鏡頭放到下一個鏡頭開始，最後一個放到片尾。素材不夠長就報錯
@@ -329,11 +364,12 @@ def shot_command(shot, frames, out_file, scale, encode):
     start = float(shot.get("in", 0.0)) if shot["picture"] == "broll" else float(shot.get("offset", 0.0))
     sw, sh = video_size(src)
     if shot["picture"] == "broll" and sw > sh:
-        bh = int(h * BG_ZOOM)
+        b = STYLE["broll"]
+        bh = int(h * b["bg_zoom"])
         graph = (f"[0:v]fps={FPS},split[a][b];"
                  f"[a]scale=-2:{bh // 4},boxblur=6:2,scale=-2:{bh},crop={w}:{h},"
-                 f"colorchannelmixer=rr={BG_DIM}:gg={BG_DIM}:bb={BG_DIM}[bg];"
-                 f"[b]scale={w}:-2[fg];[bg][fg]overlay=0:{int(BROLL_TOP * scale)},setsar=1[v]")
+                 f"colorchannelmixer=rr={b['bg_dim']}:gg={b['bg_dim']}:bb={b['bg_dim']}[bg];"
+                 f"[b]scale={w}:-2[fg];[bg][fg]overlay=0:{int(b['top'] * scale)},setsar=1[v]")
     else:
         graph = f"[0:v]fps={FPS},scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1[v]"
     return ["ffmpeg", "-v", "error", "-y", "-ss", f"{start:.3f}", "-i", str(src), "-filter_complex", graph,
@@ -394,18 +430,19 @@ def fallback_fonts(platform=sys.platform):
     return [(b, r) for b, r in candidates if Path(b).is_file() and Path(r).is_file()]
 
 
-# 把標題拆成 [(文字, 顏色)]：強調字用紅色，其他白色
+# 把標題拆成 [(文字, 顏色)]：強調字用風格的強調色，其他用標題的顏色
 def title_parts(text, accents):
+    base, accent = STYLE["title"]["color"], STYLE["title"]["accent"]
     parts, i = [], 0
     while i < len(text):
         hits = [(text.find(a, i), a) for a in accents if a and text.find(a, i) >= 0]
         if not hits:
-            parts.append((text[i:], "white"))
+            parts.append((text[i:], base))
             break
         pos, word = min(hits)
         if pos > i:
-            parts.append((text[i:pos], "white"))
-        parts.append((word, "red"))
+            parts.append((text[i:pos], base))
+        parts.append((word, accent))
         i = pos + len(word)
     return parts
 
@@ -476,7 +513,7 @@ class Overlay:
         draw, x = ImageDraw.Draw(img), pad
         for (r, f, c), tw in zip(runs, widths):
             # 備用字型的基線和主要字型不同，對齊基線（主要字型的 ascent）再畫
-            draw.text((x, pad + ascent), r, font=f, fill=COLORS.get(c, c), anchor="ls")
+            draw.text((x, pad + ascent), r, font=f, fill=STYLE["colors"][c], anchor="ls")
             x += tw
         if shadow:
             sh = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -489,21 +526,25 @@ class Overlay:
         self._texts[key] = img
         return img
 
-    # 把文字畫在畫面中線、y = cy 的位置；alpha 是透明度，dy 是往下偏移（做滑入效果）
-    def put_text(self, canvas, parts, style, alpha=1.0, dy=0.0, bold=True, shadow=True):
-        size, cy = style
-        img = self.text_image(parts, size, bold, shadow)
+    # 把文字畫在畫面中線；spec 是風格裡的 {"size", "y", "color"}，parts 給字串時整行用 spec 的顏色。
+    # alpha 是透明度，dy 是往下偏移（做滑入效果）
+    def put_text(self, canvas, parts, spec, alpha=1.0, dy=0.0, bold=True, shadow=True):
+        if isinstance(parts, str):
+            parts = [(parts, spec["color"])]
+        cy = spec["y"]
+        img = self.text_image(parts, spec["size"], bold, shadow)
         if alpha < 1.0:
             img = img.copy()
             img.putalpha(img.split()[3].point(lambda v: int(v * alpha)))
         canvas.alpha_composite(img, (int(self.w / 2 - img.width / 2), int((cy + dy) * self.scale - img.height / 2)))
 
-    # 段落標題卡的底色：由中間往外的暗色漸層
+    # 段落標題卡的底色：由中間往外的漸層（風格的 section.background，兩個顏色相同就是單色）
     def _make_gradient(self):
         yy, xx = np.mgrid[0:self.h, 0:self.w].astype(np.float32)
         r = np.sqrt(((xx - self.w / 2) / (self.w / 2)) ** 2 + ((yy - self.h / 2) / (self.h / 2)) ** 2) / math.sqrt(2)
         r = np.clip(r, 0, 1)[..., None]
-        rgb = np.array([0x1c, 0x21, 0x29], np.float32) * (1 - r) + np.array([0x0b, 0x0d, 0x10], np.float32) * r
+        inner, outer = (np.array(hex_rgb(c), np.float32) for c in STYLE["section"]["background"])
+        rgb = inner * (1 - r) + outer * r
         alpha = np.full((self.h, self.w, 1), 255, np.float32)
         return Image.fromarray(np.concatenate([rgb, alpha], 2).astype(np.uint8), "RGBA")
 
@@ -555,24 +596,26 @@ class Overlay:
                 g.putalpha(int(255 * a))
                 canvas.alpha_composite(g)
                 slide = 20 * (1 - ease_out((t - (s["start"] - SECTION_LEAD)) / 0.4))
-                self.put_text(canvas, [(s["section"]["small"], "small")], SECTION_STYLE["small"], a, shadow=False)
-                self.put_text(canvas, [(s["section"]["big"], "red")], SECTION_STYLE["big"], a, dy=slide, shadow=False)
+                text = STYLE["section"]["text"]
+                self.put_text(canvas, s["section"]["small"], text["small"], a, shadow=False)
+                self.put_text(canvas, s["section"]["big"], text["big"], a, dy=slide, shadow=False)
         for i, s in enumerate(self.shots):
             p = self.number_progress(i, t)
             if p is None or p <= 0:
                 continue
-            n = s["number"]
-            self.put_text(canvas, [(n["big"], n.get("color", "white"))], NUMBER_STYLE["big"], p, dy=30 * (1 - p))
-            self.put_text(canvas, [(n["label"], "line")], NUMBER_STYLE["label"], p)
+            n, spec = s["number"], STYLE["number"]
+            big = [(n["big"], n.get("color", spec["big"]["color"]))]
+            self.put_text(canvas, big, spec["big"], p, dy=30 * (1 - p))
+            self.put_text(canvas, n["label"], spec["label"], p)
             if n.get("note"):
-                self.put_text(canvas, [(n["note"], "dim")], NUMBER_STYLE["note"], p, bold=False)
+                self.put_text(canvas, n["note"], spec["note"], p, bold=False)
         if self.title:
-            self.put_text(canvas, self.title, TITLE_STYLE)
+            self.put_text(canvas, self.title, STYLE["title"])
         k = self.cue_at(t)
         if k is not None:
-            self.put_text(canvas, [(self.cues[k]["show"], "sub")], SUB_STYLE["zh"])
+            self.put_text(canvas, self.cues[k]["show"], STYLE["subtitle"]["zh"])
             if self.cues[k].get("en"):
-                self.put_text(canvas, [(self.cues[k]["en"], "white")], SUB_STYLE["en"])
+                self.put_text(canvas, self.cues[k]["en"], STYLE["subtitle"]["en"])
         return canvas
 
 
@@ -656,10 +699,14 @@ def build_audio(voice, total, out_path, start=0.0):
                       f"afade=t=in:st=0:d={AUDIO_FADE},afade=t=out:st={max(v['dur'] - skip - AUDIO_FADE, 0):.3f}:d={AUDIO_FADE},"
                       f"aresample=48000,adelay={delay}:all=1[a{i}]")
     length = total - start
-    mix = "".join(f"[a{i}]" for i in range(len(voice))) + f"amix=inputs={len(voice)}:normalize=0,apad,atrim=0:{length:.3f}[m]"
+    # 片長用一段剛好那麼長的靜音撐出來，不用 apad：apad 補的靜音沒有盡頭，ffmpeg 有時不會結束
+    # （Windows、ffmpeg 7.0.2 實測常常卡住；改成 apad=whole_dur 則有時補不滿）
+    silence = f"anullsrc=r=48000:cl=mono,atrim=0:{length:.3f}[s]"
+    mix = ("".join(f"[a{i}]" for i in range(len(voice)))
+           + f"[s]amix=inputs={len(voice) + 1}:normalize=0:duration=longest,atrim=0:{length:.3f}[m]")
     raw = out_path.with_name(out_path.stem + "_raw.wav")
     run = lambda cmd: subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    out = run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", ";".join(chains + [mix]),
+    out = run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", ";".join(chains + [silence, mix]),
                "-map", "[m]", "-ar", "48000", str(raw)])
     if out.returncode != 0:
         raise ComposeError(f"混配音失敗：{out.stderr.strip()}")
@@ -789,6 +836,8 @@ def main(argv=None):
         print(f"錯誤：{e}", file=sys.stderr)
         return 1
 
+
+use_style(DEFAULT_STYLE)
 
 if __name__ == "__main__":
     sys.exit(main())

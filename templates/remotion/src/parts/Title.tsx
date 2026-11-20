@@ -20,7 +20,7 @@ export const Title: React.FC<{
   accentColor?: string;
   start?: number;
   top?: number;
-}> = ({small, big, accent, accentColor = theme.colors.red, start = 4, top = theme.title.top}) => {
+}> = ({small, big, accent, accentColor = theme.colors.accent, start = 4, top = theme.title.top}) => {
   const frame = useCurrentFrame();
   const p = progress(frame, start, 14);
   const [before, hit, after] = splitAccent(big, accent);
