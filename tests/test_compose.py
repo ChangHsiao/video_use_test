@@ -564,5 +564,87 @@ class MainTest(unittest.TestCase):
         self.assertEqual(self.run_main()[0], 0)
 
 
+class StyleTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        (self.dir / "a.mp4").write_bytes(b"")
+        # 風格是整個模組共用的，測完換回預設，不影響其他測試
+        self.addCleanup(cp.use_style, cp.DEFAULT_STYLE)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def load(self, style, number=None):
+        shot = {"from": "x", "broll": "a.mp4", "in": 0}
+        if number:
+            shot["number"] = {"big": "1", "label": "x", "color": number}
+        data = {"title": {"text": "標題"}, "shots": [shot]}
+        if style:
+            data["style"] = style
+        path = self.dir / "合成.json"
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        return cp.load_plan(path)
+
+    # 在暫存資料夾做一個風格（從預設風格改幾個欄位），讓 compose 改讀那裡
+    def fake_style(self, change):
+        style = json.loads((cp.STYLES_DIR / cp.DEFAULT_STYLE / "style.json").read_text(encoding="utf-8"))
+        change(style)
+        (self.dir / "styles" / "壞的").mkdir(parents=True)
+        (self.dir / "styles" / "壞的" / "style.json").write_text(json.dumps(style), encoding="utf-8")
+        self.addCleanup(setattr, cp, "STYLES_DIR", cp.STYLES_DIR)
+        cp.STYLES_DIR = self.dir / "styles"
+
+    # styles/ 底下每個給 compose.py 用的風格（style.json 有 number_colors）都要能載入
+    def test_every_style_loads(self):
+        names = [d.name for d in cp.STYLES_DIR.iterdir() if (d / "style.json").is_file()
+                 and "number_colors" in json.loads((d / "style.json").read_text(encoding="utf-8"))]
+        self.assertIn(cp.DEFAULT_STYLE, names)
+        self.assertIn("3b1b", names)
+        for name in names:
+            with self.subTest(style=name):
+                self.assertEqual(cp.load_style(name)["name"], name)
+
+    # 沒寫 style 就是預設風格（舊的 合成.json 不用改）
+    def test_default_style(self):
+        self.assertEqual(self.load(None)["style"], cp.DEFAULT_STYLE)
+        self.assertEqual(cp.title_parts("甲乙", ["乙"]), [("甲", "white"), ("乙", "red")])
+
+    # 寫了 style 就換成那個風格：重點色、數字卡可用的顏色都跟著換
+    def test_plan_picks_style(self):
+        self.assertEqual(self.load("3b1b", number="teal")["style"], "3b1b")
+        self.assertEqual(cp.title_parts("甲乙", ["乙"]), [("甲", "white"), ("乙", "yellow")])
+        with self.assertRaisesRegex(cp.ComposeError, "amber.*3b1b"):
+            self.load("3b1b", number="amber")
+
+    # 找不到的風格要報錯，訊息列出可用的風格
+    def test_unknown_style(self):
+        with self.assertRaisesRegex(cp.ComposeError, "沒這個風格.*暗色科技風"):
+            self.load("沒這個風格")
+
+    # style.json 缺欄位要報錯
+    def test_missing_field(self):
+        self.fake_style(lambda s: s.pop("subtitle"))
+        with self.assertRaisesRegex(cp.ComposeError, "格式不對.*subtitle"):
+            cp.load_style("壞的")
+
+    # 用到 colors 裡沒有的顏色名稱要報錯
+    def test_undefined_color(self):
+        self.fake_style(lambda s: s["title"].update(accent="purple"))
+        with self.assertRaisesRegex(cp.ComposeError, "purple"):
+            cp.load_style("壞的")
+
+    # 3b1b：段落標題卡是純黑底，字幕是白色（不是預設風格的黃色）
+    def test_3b1b_overlay(self):
+        cp.use_style("3b1b")
+        cues = [make_cue(0, 0.3, 1.5, "先看一個小例子")]
+        shots = [{"from": "a", "picture": None, "start": 0.0, "end": 4.0, "section": {"small": "第一步", "big": "注意力"}}]
+        img = np.asarray(cp.Overlay({}, shots, cues, scale=0.5, font=cp.default_font()).render(1.0))
+        self.assertEqual(img[5, 5].tolist(), [0, 0, 0, 255])
+        band = img[int(1600 * 0.5):int(1680 * 0.5)]
+        self.assertGreater(int(((band[..., :3].min(axis=2) > 230)).sum()), 50)
+        self.assertEqual(int(((band[..., 0] > 200) & (band[..., 2] < 120)).sum()), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -76,6 +76,8 @@ project-name/
 
 ## Creative Direction
 
+**A chosen video style wins over this section.** If the project uses a style from `styles/` that ships a `manim.md` (e.g. `styles/3b1b/manim.md`), its background, palette, fonts, type scale, motion and scene-exit rules replace the defaults below.
+
 ### Color Palettes
 
 | Palette | Background | Primary | Secondary | Accent | Use case |

@@ -1,0 +1,25 @@
+{
+  "colors": {
+    "yellow": "#ffff00", "blue": "#58c4dd", "teal": "#5cd0b3", "red": "#fc6255", "green": "#83c167",
+    "pink": "#d147bd", "white": "#ffffff", "grey_a": "#dddddd", "grey_b": "#bbbbbb", "grey_c": "#888888"
+  },
+  "number_colors": ["yellow", "blue", "teal", "red", "green", "pink", "white"],
+  "broll": {"top": 560, "bg_zoom": 1.15, "bg_dim": 0.25},
+  "title": {"size": 52, "y": 120, "color": "white", "accent": "yellow"},
+  "number": {
+    "big": {"size": 120, "y": 1300, "color": "white"},
+    "label": {"size": 42, "y": 1405, "color": "grey_a"},
+    "note": {"size": 30, "y": 1465, "color": "grey_c"}
+  },
+  "section": {
+    "background": ["#000000", "#000000"],
+    "text": {
+      "small": {"size": 40, "y": 850, "color": "grey_b"},
+      "big": {"size": 110, "y": 960, "color": "blue"}
+    }
+  },
+  "subtitle": {
+    "zh": {"size": 58, "y": 1640, "color": "white"},
+    "en": {"size": 36, "y": 1712, "color": "grey_b"}
+  }
+}
