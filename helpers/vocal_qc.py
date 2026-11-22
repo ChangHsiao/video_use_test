@@ -20,7 +20,23 @@ SPEC = {  # name: (low, high)
     "breath below speech dB": (24.0, 99.0),
     "longest breath s": (0.0, 0.40),
     "breaths per min": (3.0, 9.0),
+    "dropouts per min": (0.0, 3.0),
 }
+
+
+def dropouts(y, sr, speech):
+    """Times (s) where the voice falls from speech level to near silence within 30 ms.
+
+    A natural stop decays over 100-270 ms (median of the A1 take); a cut into digital silence does it in one
+    or two 10 ms frames and sounds like the signal dropping out. Raw ElevenLabs takes measure ~35/min, the
+    old per-comma rhythm pass ~80/min; sentence cuts plus the room tail in prosody.py bring it under 2.
+    """
+    hop = int(sr * 0.01)
+    m = len(y) // hop
+    db = 20 * np.log10(np.sqrt((y[: m * hop].reshape(m, hop) ** 2).mean(1)) + 1e-12)
+    hi, lo = speech - 20, speech - 40
+    return [i / 100 for i in range(3, m) if db[i - 3] > hi and db[i] < lo]
+
 
 
 def ebur(path):
@@ -79,6 +95,7 @@ def measure(path):
         "longest breath s": max(blen) if blen else 0.0,
         "breaths per min": len(breaths) / mins,
         "sibilance 5-9k vs 0.3-3k dB": float(sib),
+        "dropouts per min": len(dropouts(y, sr, speech)) / mins,
     }
 
 
@@ -90,6 +107,10 @@ def main():
             lo, hi = SPEC.get(k, (None, None))
             mark = "" if lo is None else ("OK  " if lo <= v <= hi else "FAIL")
             print(f"  {mark:4} {k:30} {v:7.2f}" + ("" if lo is None else f"   spec {lo:g}..{hi:g}"))
+        if not SPEC["dropouts per min"][0] <= m["dropouts per min"] <= SPEC["dropouts per min"][1]:
+            y, sr = librosa.load(path, sr=48000)
+            at = dropouts(y, sr, m["speech level dBFS"])
+            print("       dropouts at (s): " + ", ".join(f"{s:.2f}" for s in at[:20]) + (" ..." if len(at) > 20 else ""))
 
 
 if __name__ == "__main__":
