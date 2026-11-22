@@ -7,6 +7,15 @@ Usage: python helpers/prosody.py --voice-dir D:/videos/聲音範本/A1_男聲 --
   writes edit/voice/錄音室版/NAME_raw.mp3   (model take as is, podcast chain)
          edit/voice/錄音室版/NAME_rhythm.mp3 (after the rhythm pass)
          edit/voice/錄音室版/NAME.json      (per-line plan + measured result)
+         edit/voice_lines.json, edit/cues.json, edit/master.srt  (with --cues, for compose.py)
+
+Cutting (--chunk, or the profile's "chunk"):
+  line     - cut at every caption line and re-space with planned pauses (the original behaviour; news default)
+  sentence - cut only between sentences, at the quietest point, keeping the model's own phrasing inside a
+             sentence; tempo/pitch per sentence (explainer default). Per-comma cuts landed while the voice was
+             still at speech level in 28 of 99 lines of a 2026-11-22 take, which sounds like dropouts.
+A faint small-room tail (RT60 0.3 s, -20 dB) is added before the studio chain (--no-room to skip): the model's
+pauses are digital silence (~-87 dBFS), and without it every stop sounds like the signal cutting out.
 
 Per line (one caption line = one breath phrase) the plan sets:
   role   - from the text: punch / reveal / context / question / normal
@@ -72,24 +81,35 @@ ROLE = {  # target rate (chars/s), pitch (semitones), pause scale, level (dB)
 TEMPO_RANGE = (0.80, 1.15)   # beyond this the stretch starts to sound processed
 MID_TARGET = 5.1             # middle clause of a long sentence
 PAUSE_SCALE = 1.0
+CHUNK = "line"       # where the take is cut: "line" (every caption line) or "sentence" (only between sentences)
+ROOM = True          # add the small-room tail before the studio chain
+ROOM_RT60 = 0.30     # seconds; small treated room
+ROOM_WET_DB = -20.0  # reverb level vs dry
 LATIN_WORD = re.compile(r"[A-Za-z]+")
 # Delivery profiles. podcast: the calm reading above. news: matched to the reference short
 # (spc3YBqiC4M): articulation 7.3 syl/s (sd 0.9), pauses median 0.40 s, p90 0.72 s.
 PROFILES = {
     "podcast": None,
+    # explainer: 3b1b-style explainer short, between podcast and news. Cuts only between sentences (see
+    # rebuild_sentences); TTS speed stays 1.15 so podcast takes are reused from cache.
+    "explainer": {"speed": 1.15, "tempo": (0.85, 1.30), "mid": 6.2, "pause": 0.65, "breath_min_pause": 0.45,
+                  "chunk": "sentence", "breath_below": 35.0,
+                  "targets": {"punch": 5.0, "reveal": 5.2, "question": 5.2, "context": 6.4, "normal": 5.9}},
     "news": {"speed": 1.2, "tempo": (0.85, 1.55), "mid": 7.8, "pause": 0.72, "breath_min_pause": 0.36,
              "targets": {"punch": 6.4, "reveal": 6.6, "question": 6.6, "context": 8.0, "normal": 7.4}},
 }
 
 
 def use_profile(name):
-    global TEMPO_RANGE, MID_TARGET, PAUSE_SCALE, BREATH_MIN_PAUSE
+    global TEMPO_RANGE, MID_TARGET, PAUSE_SCALE, BREATH_MIN_PAUSE, CHUNK, BREATH_BELOW
     prof = PROFILES[name]
     if prof is None:
         return
     SETTINGS["speed"] = prof["speed"]
     TEMPO_RANGE, MID_TARGET, PAUSE_SCALE = prof["tempo"], prof["mid"], prof["pause"]
     BREATH_MIN_PAUSE = prof.get("breath_min_pause", BREATH_MIN_PAUSE)
+    CHUNK = prof.get("chunk", CHUNK)
+    BREATH_BELOW = prof.get("breath_below", BREATH_BELOW)
     for role, rate in prof["targets"].items():
         ROLE[role] = (rate, *ROLE[role][1:])
 
@@ -321,6 +341,122 @@ def integrated_lufs(path):
     return float(re.findall(r"I:\s+(-?[\d.]+) LUFS", r.stderr)[-1])
 
 
+def cosine_fade(x, n_in, n_out):
+    """Raised-cosine fades: no click, and the tail dies away instead of stopping."""
+    n_in, n_out = min(n_in, len(x) // 2), min(n_out, len(x) // 2)
+    if n_in:
+        x[:n_in] *= (0.5 - 0.5 * np.cos(np.linspace(0, np.pi, n_in))).astype(np.float32)
+    if n_out:
+        x[-n_out:] *= (0.5 + 0.5 * np.cos(np.linspace(0, np.pi, n_out))).astype(np.float32)
+    return x
+
+
+def rebuild_sentences(audio, lines, sp, bank):
+    """Like rebuild(), but cuts only between sentences, at the quietest point found by energy.
+
+    Cutting at every comma (rebuild) chopped words the model had run together: 28 of 99 cuts in the
+    first take landed while the voice was still at speech level, which sounds like the signal dropping out.
+    Inside a sentence the model's own phrasing and comma pauses are kept; tempo/pitch are set per sentence.
+    """
+    hop = int(SR * 0.01)
+    env = 20 * np.log10(np.sqrt(np.convolve(audio ** 2, np.ones(hop) / hop, "same")) + 1e-9)
+    peak = np.percentile(env[env > -40], 90)
+    groups = []                                   # consecutive line indices sharing a sentence number
+    for k, l in enumerate(lines):
+        if groups and lines[groups[-1][0]]["n"] == l["n"]:
+            groups[-1].append(k)
+        else:
+            groups.append([k])
+
+    def valley(lo, hi):
+        lo, hi = max(0, int(lo * SR)), min(len(audio) - 1, int(hi * SR))
+        if hi - lo < hop:
+            return lo
+        return lo + int(np.argmin(env[lo:hi]))
+
+    def decay_end(b, limit):
+        j = int(b * SR)
+        while j < limit and env[j] > peak - 40:
+            j += hop
+        return min(j + 2 * hop, limit)
+
+    bounds = []
+    for gi, g in enumerate(groups):
+        a, b = sp[g[0]][0], sp[g[-1]][1]
+        prev_b = sp[groups[gi - 1][-1]][1] if gi else 0.0
+        next_a = sp[groups[gi + 1][0]][0] if gi + 1 < len(groups) else len(audio) / SR
+        v0 = valley(prev_b, a) if gi else 0
+        v1 = valley(b, next_a) if gi + 1 < len(groups) else len(audio) - 1
+        s = max(v0, int((a - 0.08) * SR))
+        e = decay_end(b, v1)
+        bounds.append((s, e))
+
+    out, kept, pending_breath = [np.zeros(int(0.5 * SR), np.float32)], 0, False
+    for gi, g in enumerate(groups):
+        s, e = bounds[gi]
+        gl = [lines[k] for k in g]
+        syl = sum(syllables(l["say"]) for l in gl)
+        span = max(sp[g[-1]][1] - sp[g[0]][0], 0.05)
+        model_rate = syl / span
+        target = sum(l["target"] * syllables(l["say"]) for l in gl) / max(syl, 1e-6)
+        tempo = min(max(target / model_rate, TEMPO_RANGE[0]), TEMPO_RANGE[1])
+        pitch = sum(l["pitch"] for l in gl) / len(gl)
+        gain = sum(l["gain"] for l in gl) / len(gl)
+        phrase = stretch(audio[s:e], tempo, pitch).astype(np.float32) * 10 ** (gain / 20)
+        base = sum(map(len, out)) / SR
+        for k in g:
+            l = lines[k]
+            l["model_rate"] = round(model_rate, 2)
+            l["tempo"] = round(tempo, 3)
+            l["final_rate"] = round(model_rate * tempo, 2)
+            l["t0"] = round(base + (sp[k][0] - s / SR) / tempo, 3)
+            l["t1"] = round(base + (sp[k][1] - s / SR) / tempo, 3)
+            l["breath_kept"] = 0.0
+        out.append(cosine_fade(phrase, int(0.008 * SR), int(0.04 * SR)))
+        last = gl[-1]
+        pending_breath = pending_breath or any(l["breath"] for l in gl[1:])
+        nxt_breath = gi + 1 < len(groups) and (lines[groups[gi + 1][0]]["breath"] or pending_breath)
+        nxt_s = bounds[gi + 1][0] if gi + 1 < len(groups) else e
+        gap = audio[e:nxt_s] if nxt_s > e else np.zeros(0, np.float32)
+        bi = breath_in_gap(gap)
+        tail = np.zeros(0, np.float32)
+        if nxt_breath and (bi is not None or bank):
+            src = trim_tail(gap[bi:] if bi is not None else bank[kept % len(bank)])
+            tail = src[-int(BREATH_MAX * random.Random(gi).uniform(0.75, 1.0) * SR):].copy()
+            if len(tail):
+                level = 20 * np.log10(np.sqrt(np.convolve(tail ** 2, np.ones(hop) / hop, "valid")).max() + 1e-9)
+                tail *= 10 ** (min(peak - BREATH_BELOW + random.Random(gi).uniform(-1.5, 1.5) - level, 20.0) / 20)
+                tail = cosine_fade(tail, min(int(0.08 * SR), len(tail) // 2), int(0.03 * SR))
+                kept += 1
+                pending_breath = False
+        last["breath_kept"] = round(len(tail) / SR, 2)
+        out.append(np.zeros(int(max(last["pause"] - len(tail) / SR, 0.08) * SR), np.float32))
+        if len(tail):
+            last["breath_at"] = sum(map(len, out)) / SR
+        out.append(tail)
+    return np.concatenate(out), kept
+
+
+
+
+def add_room(x):
+    """Give the dry TTS a small room so every stop decays instead of dropping to digital silence.
+
+    The model's pauses sit at about -87 dBFS (true digital silence); a voice that falls straight into
+    that sounds like the signal cutting out. A faint synthetic room tail (RT60 0.3 s, -20 dB) fixes it.
+    """
+    from scipy.signal import fftconvolve, butter, sosfilt
+    rng = np.random.default_rng(7)
+    n = int(SR * ROOM_RT60 * 1.2)
+    tt = np.arange(n) / SR
+    ir = rng.standard_normal(n) * np.exp(-6.91 * tt / ROOM_RT60)
+    ir[: int(0.004 * SR)] = 0.0                                   # 4 ms pre-delay
+    ir = sosfilt(butter(2, [200, 5000], "bandpass", fs=SR, output="sos"), ir)
+    ir /= np.sqrt((ir ** 2).sum())
+    wet = fftconvolve(x, ir)[: len(x)].astype(np.float32)
+    return (x + wet * 10 ** (ROOM_WET_DB / 20)).astype(np.float32)
+
+
 def finish(x, path):
     """Studio chain -> gain to the loudness target -> peak limit -> treated-room floor underneath."""
     with tempfile.TemporaryDirectory() as d:
@@ -338,6 +474,39 @@ def finish(x, path):
                         "-ar", "48000", "-c:a", "pcm_s24le", str(Path(path).with_suffix(".wav"))], check=True)
 
 
+CUE_HOLD = 0.25   # caption stays this long after its last character, never into the next line
+
+
+def cues_from_report(report, audio_name):
+    """Caption cues in align_voice.py's format, timed from the per-line t0/t1 of the rhythm pass.
+
+    seg is the section index: compose.py treats a change of seg as the first line of a section.
+    """
+    lines = [(si, l) for si, sec in enumerate(report) for l in sec["lines"]]
+    cues = []
+    for k, (si, l) in enumerate(lines):
+        end = l["t1"] + CUE_HOLD
+        if k + 1 < len(lines):
+            end = min(end, lines[k + 1][1]["t0"] - 0.02)
+        cues.append({"seg": si, "audio": audio_name, "start": round(l["t0"], 3), "end": round(max(end, l["t1"]), 3),
+                     "say": TAG.sub("", l["say"]), "show": l["show"], "en": l.get("en") or None})
+    return cues
+
+
+def write_cues(report, audio):
+    """voice_lines.json + cues.json + master.srt next to the episode, so compose.py can use this narration."""
+    from align_voice import to_srt
+    cues = cues_from_report(report, audio.name)
+    rel = audio.relative_to(EDIT).as_posix()
+    segment = {"audio": rel, "start": 0.0,
+               "lines": [{"say": c["say"], "show": c["show"], "en": c["en"]} for c in cues]}
+    (EDIT / "voice_lines.json").write_text(json.dumps({"segments": [segment]}, ensure_ascii=False, indent=1),
+                                           encoding="utf-8")
+    (EDIT / "cues.json").write_text(json.dumps(cues, ensure_ascii=False, indent=1), encoding="utf-8")
+    (EDIT / "master.srt").write_text(to_srt(cues), encoding="utf-8")
+    print(f"cues: {len(cues)} lines -> voice_lines.json, cues.json, master.srt")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--voice-dir", help="voice template folder (voice.json + breaths/*.wav), e.g. D:/videos/聲音範本/A1_男聲")
@@ -349,9 +518,16 @@ def main():
     p.add_argument("--sections", default="0,1")
     p.add_argument("--breath-tags", action="store_true", help="ask the model for [inhales] at breath slots")
     p.add_argument("--breath-from", default="", help="comma-separated earlier tags of this voice to harvest breaths from")
+    p.add_argument("--chunk", choices=["line", "sentence"], help="override the profile's cut mode")
+    p.add_argument("--no-room", action="store_true", help="skip the small-room tail")
+    p.add_argument("--cues", action="store_true",
+                   help="also write voice_lines.json, cues.json and master.srt in --edit for compose.py")
     args = p.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     use_profile(args.profile)
+    global CHUNK, ROOM
+    CHUNK = args.chunk or CHUNK
+    ROOM = ROOM and not args.no_room
     sections = parse_script(Path(args.script))
     pick = [int(x) for x in args.sections.split(",")]
     key = load_key()
@@ -386,7 +562,7 @@ def main():
             l["tempo"] = round(min(max(t, TEMPO_RANGE[0]), TEMPO_RANGE[1]), 3)
             l["final_rate"] = round(l["model_rate"] * l["tempo"], 2)
         offset = sum(map(len, new_all)) / SR
-        rebuilt, kept = rebuild(audio, lines, sp, bank)
+        rebuilt, kept = (rebuild_sentences if CHUNK == "sentence" else rebuild)(audio, lines, sp, bank)
         if i == 0:
             rebuilt *= 10 ** (SECTION_LIFT_HOOK / 20)
         for l in lines:
@@ -399,8 +575,11 @@ def main():
                        "end": round(offset + len(rebuilt) / SR, 3), "breaths_kept": kept, "lines": lines})
 
     finish(np.concatenate(raw_all), OUT / f"{args.tag}_raw.mp3")
-    finish(np.concatenate(new_all), OUT / f"{args.tag}_rhythm.mp3")
+    rhythm = np.concatenate(new_all)
+    finish(add_room(rhythm) if ROOM else rhythm, OUT / f"{args.tag}_rhythm.mp3")
     (OUT / f"{args.tag}.json").write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+    if args.cues:
+        write_cues(report, OUT / f"{args.tag}_rhythm.wav")
     for sec in report:
         print(f"## {sec['section']}  (breaths kept from the take: {sec['breaths_kept']})")
         for l in sec["lines"]:
