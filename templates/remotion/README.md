@@ -19,6 +19,10 @@ npm install
 - 第 1 行：把零件庫複製成 `edit/animations/`。整支片的動畫都放在這一個資料夾，Remotion 只裝一次（約 700 MB）
 - 第 3 行：安裝 Remotion。出現 `esbuild` 的 install-scripts 警告可以不管，實測照樣能算繪
 
+## 品牌元件
+
+`src/brands/<品牌名稱>/` 放品牌專用、每集共用的動畫，例如 `src/brands/桑尼資料科學/outro/`（3 秒片尾）。用法寫在品牌的 `brands/<品牌名稱>/BRAND.md`。這些元件不在 `Root.tsx` 註冊，要用時照 BRAND.md 的說明註冊。
+
 ## 零件
 
 都從 `src/parts/` 匯入：`import {Background, Title, ...} from '../parts';`。座標以 1080×1920 設計。

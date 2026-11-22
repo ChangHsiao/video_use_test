@@ -1,4 +1,5 @@
 {
+  "layout": "broll_top",
   "colors": {
     "red": "#ff5a3c", "cyan": "#7fd8ff", "amber": "#ffb340", "green": "#5be08a", "white": "#ffffff",
     "line": "#c9d1db", "dim": "#8a93a0", "small": "#aab3bf", "sub": "#ffd43b"
