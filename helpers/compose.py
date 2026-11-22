@@ -20,9 +20,15 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+# helpers/ is only on sys.path when this runs as a script; tests load it by file path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import registry  # noqa: E402
+from registry import hex_rgb  # noqa: E402,F401  （測試和舊程式用 compose.hex_rgb）
 
-# ---------- 風格：顏色、字級、位置從 styles/<風格名稱>/style.json 讀（欄位說明見 styles/README.md），座標以 1080×1920 為準 ----------
-STYLES_DIR = Path(__file__).resolve().parents[1] / "styles"
+
+# ---------- 風格：顏色、字級、位置從 styles/<風格名稱>/style.json 讀（由 registry.py 讀取和檢查，欄位說明見 styles/README.md），座標以 1080×1920 為準 ----------
+STYLES_DIR = registry.STYLES_DIR
+LAYOUT = "broll_top"  # 這支程式畫的版型；其他版型的風格（例如新聞短片的 news_band）要用自己的合成程式
 DEFAULT_STYLE = "暗色科技風"  # 合成.json 沒寫 style 時用這個
 STYLE = {}  # 目前用的風格，由 use_style() 換；檔案最後會先載入預設風格
 WIDTH, HEIGHT = 1080, 1920
@@ -75,39 +81,16 @@ def find_cue(cues, text, after=-1):
     return hits[0]
 
 
-# "#rrggbb" → (r, g, b)
-def hex_rgb(color):
-    if not re.fullmatch(r"#[0-9a-fA-F]{6}", str(color)):
-        raise ValueError(f"顏色要寫成 #rrggbb：{color}")
-    return tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
-
-
-# 讀 styles/<name>/style.json 並檢查 compose.py 會用到的欄位；找不到、缺欄位、用到沒定義的顏色都報錯
+# 讀 styles/<name>/style.json（registry.py 檢查欄位），只接受這支程式畫得出來的版型。回傳 style.json 的內容加上 name
 def load_style(name):
-    path = STYLES_DIR / str(name) / "style.json"
-    if not path.is_file():
-        have = sorted(d.name for d in STYLES_DIR.iterdir() if (d / "style.json").is_file())
-        raise ComposeError(f"找不到風格「{name}」（{path}）。可用的風格：{'、'.join(have)}")
     try:
-        style = json.loads(path.read_text(encoding="utf-8"))
-        colors = style["colors"]
-        specs = [style["title"], *style["number"].values(), *style["section"]["text"].values(),
-                 *style["subtitle"].values()]
-        used = [s["color"] for s in specs] + [style["title"]["accent"], *style["number_colors"]]
-        for s in specs:
-            float(s["size"]), float(s["y"])
-        for k in ("top", "bg_zoom", "bg_dim"):
-            float(style["broll"][k])
-        inner, outer = style["section"]["background"]
-        for c in (*colors.values(), inner, outer):
-            hex_rgb(c)
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
-        raise ComposeError(f"{path} 的格式不對：{e!r}（欄位說明見 styles/README.md）")
-    missing = sorted({c for c in used if c not in colors})
-    if missing:
-        raise ComposeError(f"{path} 用到 colors 裡沒有的顏色：{'、'.join(missing)}")
-    style["name"] = str(name)
-    return style
+        style = registry.load_style(name, root=STYLES_DIR)
+    except registry.ConfigError as e:
+        raise ComposeError(str(e))
+    if style.layout != LAYOUT:
+        raise ComposeError(f"風格「{name}」的版型是 {style.layout}，compose.py 只畫 {LAYOUT}"
+                           f"（新聞短片的 news_band 用 helpers/news_short.py）")
+    return dict(style.data, colors=style.colors, name=str(name))
 
 
 # 換成另一個風格：之後畫的疊加層、B-roll 版面都照它

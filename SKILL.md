@@ -38,6 +38,8 @@ Everything else in this document is a worked example. Deviate whenever the mater
 
 The skill lives in `video-use/`. User footage lives wherever they put it. All session outputs go into `<videos_dir>/edit/`.
 
+The skill itself is layered: `sop/` + `recipes/` (workflow) → `styles/` + `brands/` (look) → `helpers/`, `templates/remotion/`, `skills/manim-video/` (engines). Dependencies only point down; what goes where is in `ARCHITECTURE.md`.
+
 ```
 <videos_dir>/
 ├── <source files, untouched>
@@ -82,6 +84,9 @@ Helpers (`helpers/transcribe.py`, `helpers/render.py`, etc.) live alongside this
 - **`align_voice.py <voice_lines.json>`** — subtitle timing for voice-over that has no word timestamps (TTS generated on a website, another tool, or self-recorded). You write `voice_lines.json`: one segment per final audio file (speed it up first if needed), its clauses split at punctuation, each with `say` (spoken text), `show` (on-screen text) and optional `en`. It places clause boundaries on detected pauses, merges cues shorter than 0.8 s within a sentence, and writes `master.srt`, `cues.json` and `align_review.md` next to the JSON — show the user the review list. If the TTS API returned timestamps, use those instead. Experimental; tested on Chinese only.
 - **`compose.py <edit/合成.json>`** — assembles a vertical short from a shot list you write: B-roll / animation / presenter clips, voice-over, top title, number cards, section cards and captions. Shots are placed by caption text from `cues.json` (from `align_voice.py`), not seconds, so re-recorded voice needs no edits. Before rendering it checks each B-roll head and tail for a cut inside the source clip; on a hit it stops, writes `edit/compose_check/<n>.jpg` and a suggested `in` — move `in`, or add `"cut_ok": true` after looking. Default output is a 540×960 `preview.mp4`; `--samples` writes one PNG per card type, `--clip <start> [len]` a short sample, `--full` the 1080×1920 `final.mp4`. Font follows the OS unless `--font`. Format and steps: `sop/科普短片.md` step 13. Experimental.
 - **`grade.py <in> -o <out>`** — ffmpeg filter chain grade. Presets + `--filter '<raw>'` for custom.
+- **`news_short.py <edit>/短片.json`** — assembles a vertical news short in the `news_band` layout: blurred fill + picture band, info / quote (SOT) cards with the source's own audio, bilingual captions, grade, dissolves, cover frame, brand outro, music bed. Shots follow the per-line times from `prosody.py`. `--samples` writes one PNG per overlay type to `edit/verify/`; `--style` picks another `news_band` style. Format in the file header; steps in `sop/新聞短片.md`. Needs `uv sync --extra news`.
+- **`voice_tts.py`, `prosody.py`, `signoff.py`, `vocal_qc.py`** — ElevenLabs narration: per-sentence TTS that writes `voice_lines.json` / `cues.json` / `master.srt`; a rhythm pass (pace, pauses, breaths; `--profile news`); a fixed brand sign-off; and a check against `recipes/錄音室級旁白.md`. All take `--edit <edit>` (default: the current folder) and run from the repo — never copy them into a video folder.
+- **`registry.py`** — not a CLI: loads `styles/<name>/style.json` and `brands/<name>/brand.json`, checks the fields of the style's layout, merges brand colours, and resolves assets episode → style → brand. Compositors read looks only through it.
 
 For animations, create `<edit>/animations/slot_<id>/` with `Bash` and spawn a sub-agent via the `Agent` tool.
 
@@ -90,26 +95,34 @@ For animations, create `<edit>/animations/slot_<id>/` with `Bash` and spawn a su
 `recipes/` holds write-ups for specific video types: the workflow, the pitfalls hit while making one, and a worked example. Read the matching recipe before transcribing (see step 1 of the process).
 
 - `recipes/整理型短片.md` — long interview / podcast → 1–3 min vertical explainer with voice-over and the speaker's own lines
+- `recipes/時事新聞短影音.md` — current-affairs Shorts / Reels: news lead, evidence, chronology, mobile packaging and post-publication review. The steps live in `sop/新聞短片.md`.
 - `recipes/上下分鏡.md` — vertical split screen (speaker top, B-roll bottom) with image overlays placed by you
+- `recipes/錄音室級旁白.md` — studio-grade TTS narration spec (loudness, breaths, noise floor, EQ) that `prosody.py` follows and `vocal_qc.py` measures
 
 Recipes are not presets. Items under 預設 are starting points — ask the user. Items under 範例 describe one past video — never copy them as-is.
 
 ## SOPs
 
-`sop/` holds step-by-step procedures for one kind of video, with defaults already decided.
+`sop/` holds product lines: step-by-step procedures for one kind of video (type × format), with checkpoints and defaults already decided. A recipe is experience about a material or technique; an SOP is what to deliver and in which order. The split is defined in `sop/README.md`; the whole layering in `ARCHITECTURE.md`.
 
-- `sop/科普短片.md` — science / tech explainer short (~2.5 min vertical) made from talks, launches or official videos: script, storyboard, voice-over, B-roll
+- `sop/科普短片.md` — science / tech explainer short (~2.5 min vertical) made from talks, launches or official videos: script, storyboard, voice-over, B-roll. Default style `暗色科技風`, compositor `compose.py`
+- `sop/新聞短片.md` — news explainer short (~2 min vertical) from reports, statements and announcements: narration alternating with quoted sound, reviewer pass, publishing package. Default style `桑尼新聞短片`, compositor `news_short.py`
 
-When the user asks for a science / tech explainer short, read `sop/科普短片.md` before transcribing and follow it. This is an exception to Principle 5 and step 3: use its defaults and stop only at its checkpoints instead of asking open questions. Its checkpoint 2 (企劃) is the strategy of step 4, so Hard Rule 11 still applies: nothing is cut or rendered before the user approves it. Outside an SOP, the normal process applies.
+When the user asks for a science / tech explainer short, read `sop/科普短片.md` before transcribing and follow it; for a news short (including a Sunny Data Science / 桑尼 news short), read `sop/新聞短片.md`. This is an exception to Principle 5 and step 3: use its defaults and stop only at its checkpoints instead of asking open questions. Its checkpoint 2 (企劃) is the strategy of step 4, so Hard Rule 11 still applies: nothing is cut or rendered before the user approves it. Outside an SOP, the normal process applies.
 
-## Styles
+## Styles and brands
 
-`styles/` holds the look of one kind of video: layout numbers, colors, fonts, transitions, plus its assets.
+The look of a video lives outside the workflow, in two swappable layers (contracts in `styles/README.md` and `brands/README.md`):
 
-Each style is one folder and they are swappable; the folder contract and how to switch or add one are in `styles/README.md`. For the 科普短片 SOP the style named in the plan goes into `合成.json` as `"style": "<folder name>"` (`compose.py` reads that folder's `style.json`; default `暗色科技風`), and the folder's `theme.ts` / `manim.md` restyle the explainer animations.
+- `styles/<name>/` — a visual language: `STYLE.md` (rules to follow) and `style.json` (layout numbers). `"layout"` names the compositor that draws it: `broll_top` → `compose.py`, `news_band` → `news_short.py`. Optional `theme.ts` (Remotion), `manim.md` (Manim), `assets/`, `examples/`.
+- `brands/<name>/` — a channel identity shared by long and short videos: `BRAND.md` (outro, sign-off, voice rules) and `brand.json` (colours, fonts, logo, outro, sign-off, voices). A style attaches one with `"brand": "<name>"`.
+
+The style named in the plan goes into `合成.json` as `"style": "<folder name>"` (default `暗色科技風`) or into `news_short.py --style`. Read the style's `STYLE.md`, and its brand's `BRAND.md` if it has one, before making visuals.
 
 - `styles/暗色科技風/` — dark tech look, the default for the 科普短片 SOP
 - `styles/3b1b/` — pure-black, step-by-step explainer look distilled from the 3b1b/videos scene code: one colour per concept, yellow only for "look here", new objects grow out of existing ones, pause after every move. Manim adapter in `manim.md`, sample scene `example_scene.py`
+- `styles/桑尼新聞短片/` — vertical news short in the reference layout, cover system C with an AI cover prompt, news-pace voice; brand `桑尼資料科學`. The default for the 新聞短片 SOP
+- `brands/桑尼資料科學/` — Sunny Data Science CIS, 3 s animated outro, fixed spoken sign-off, narration voices
 
 ## The process
 

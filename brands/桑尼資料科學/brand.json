@@ -1,0 +1,22 @@
+{
+  "name": "桑尼資料科學",
+  "tagline": "不只學會，更要交付。",
+  "slogan": "用數據，看懂科技大事。",
+  "colors": {
+    "mint": "#7EEBD9", "red": "#BA4D43", "teal": "#2C918C", "teal_dark": "#0F2D2B",
+    "bg": "#050505", "navy": "#1E3A5F", "white": "#ffffff"
+  },
+  "fonts": {
+    "zh": ["fonts/NotoSansTC-VF.ttf", "C:/Windows/Fonts/NotoSansTC-VF.ttf", "/usr/share/fonts/truetype/noto/NotoSansTC-VF.ttf"],
+    "en": ["fonts/InterVariable.ttf"]
+  },
+  "logo": {"tile": "logo/logo_main_1x1.png", "mark": "logo/dark.svg"},
+  "outro": {"vertical": "assets/outro_A_3s.mp4", "vertical_4s": "assets/outro_A_4s.mp4"},
+  "signoff": {
+    "audio": "assets/signoff.wav",
+    "text": "這裡是桑尼資料科學，每週用數據，拆解一則科技大事。",
+    "show": "這裡是桑尼資料科學　每週用數據拆解一則科技大事",
+    "en": "Sunny Data Science: one tech story, decoded with data, every week."
+  },
+  "voices": {"male": "CG56nF519jHs9bMWKdXk", "female": "gGmJOmvg7PPQJ8AkL8Yd"}
+}

@@ -48,6 +48,8 @@ command -v uv >/dev/null && uv sync || pip install -e .
 
 `pyproject.toml` lists `requests`, `librosa`, `matplotlib`, `pillow`, `numpy`. No console scripts — helpers are invoked directly as `python helpers/<name>.py`.
 
+News shorts (`sop/新聞短片.md`) also need face detection and audio I/O: `uv sync --extra news` (or `pip install -e .[news]`). Manim animations: `--extra animations`.
+
 ### 3. Install ffmpeg (+ optional yt-dlp)
 
 `ffmpeg` and `ffprobe` are hard requirements. `yt-dlp` is only needed if the user wants to pull sources from URLs. Animation engines such as HyperFrames, Remotion, and Manim are installed lazily the first time a project actually needs them.

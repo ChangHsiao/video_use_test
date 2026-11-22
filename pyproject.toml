@@ -18,6 +18,8 @@ dependencies = [
 
 [project.optional-dependencies]
 animations = ["manim"]
+# news shorts: face framing in news_short.py, breath editing in prosody.py / signoff.py
+news = ["opencv-python-headless>=4.8,<5", "soundfile"]  # OpenCV 5 dropped the Haar face cascades news_short.py uses
 
 [build-system]
 requires = ["setuptools>=61.0"]
@@ -25,3 +27,8 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 py-modules = []
+
+# helpers/ are run as scripts, not imported as a package: uv only installs the dependencies and
+# does not build the project (no video_use.egg-info appearing after every uv run)
+[tool.uv]
+package = false
