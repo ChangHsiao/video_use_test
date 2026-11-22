@@ -1,0 +1,24 @@
+{
+  "canvas": {"w": 1080, "h": 1920, "fps": 30},
+  "colors": {
+    "mint": "#7EEBD9", "red": "#BA4D43", "teal": "#2C918C", "teal_dark": "#0F2D2B",
+    "bg": "#050505", "navy": "#1E3A5F", "white": "#ffffff", "sub": "#7EEBD9"
+  },
+  "fonts": {"zh": "Noto Sans TC", "en": "fonts/InterVariable.ttf"},
+  "band": {"y": 327, "h": 923, "fade": 300, "ticker_trim": 0.27},
+  "title": {"size": 46, "y": 300, "color": "white", "accent": "mint"},
+  "info": {"y": 1080, "tag_size": 25, "line_size": 32, "tag_bg": "red"},
+  "sot_card": {"y": 1255, "size": 25, "source_size": 21, "tag_bg": "red"},
+  "subtitle": {
+    "zh": {"size": 52, "y": 1350, "color": "mint", "min_size": 44},
+    "en": {"size": 32, "y": 1422, "color": "white", "min_size": 26}
+  },
+  "grade": {"contrast": 1.07, "saturation": 0.86, "push": 0.04, "vignette": "PI/5", "grain": 5},
+  "transitions": {"in_block": 0.3, "between_blocks": 0.45, "sot_pre": 0.35, "sot_post": 0.5, "vo_hold": 0.6},
+  "cover": {"system": "C", "dur": 1.2, "series": "科技大事 2 分鐘", "episode_on_cover": false,
+            "safe_zone": {"x": [80, 940], "y": [300, 1500]}},
+  "outro": {"video": "assets/outro_A_3s.mp4", "slogan": "用數據，看懂科技大事。"},
+  "voice": {"male": "CG56nF519jHs9bMWKdXk", "female": "gGmJOmvg7PPQJ8AkL8Yd", "profile": "news",
+            "lufs": -16, "signoff": "assets/signoff.wav"},
+  "music": {"file": "assets/music_bed_news.mp3", "under_voice_db": 20, "rise_last_s": 25}
+}

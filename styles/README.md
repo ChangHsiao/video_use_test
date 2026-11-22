@@ -23,6 +23,7 @@
 |---|---|---|---|
 | [暗色科技風](暗色科技風/STYLE.md) | 科普短片（預設） | `compose.py` | 暗色漸層底、紅色重點字、黃色字幕 |
 | [3b1b](3b1b/STYLE.md) | 講原理、數學、演算法、AI 的解說片 | `compose.py`；動畫用 Manim 或 Remotion | 從 3Blue1Brown 的影片原始碼整理出來的畫面語言：全黑底、一個概念一個顏色、圖形從上一個圖形長出來 |
+| [桑尼新聞短片](桑尼新聞短片/STYLE.md) | 桑尼資料科學的直式新聞短片 | 自己的 `tools/short.py` | 品牌 CIS、封面、片尾、口播收尾 |
 
 ## 一個風格資料夾放什麼
 
@@ -36,7 +37,7 @@
 | `manim.md`、範例場景 | 選用 | 用 Manim 做動畫的 Agent | 這個風格在 Manim 的設定；和 `skills/manim-video/SKILL.md` 的預設值不一樣的地方，以風格為準 |
 | 其他（素材、字型、工具） | 選用 | — | 這個風格專用的東西放在自己的資料夾，不放到 `helpers/` |
 
-不用 `compose.py` 的風格（有自己的合成工具），`style.json` 的欄位可以自己訂，但 `合成.json` 的 `"style"` 不能指到它。
+不用 `compose.py` 的風格（例如桑尼新聞短片有自己的工具），`style.json` 的欄位可以自己訂，但 `合成.json` 的 `"style"` 不能指到它。
 
 ### `style.json` 的欄位（`compose.py` 讀的）
 

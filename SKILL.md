@@ -110,6 +110,9 @@ Each style is one folder and they are swappable; the folder contract and how to 
 
 - `styles/暗色科技風/` — dark tech look, the default for the 科普短片 SOP
 - `styles/3b1b/` — pure-black, step-by-step explainer look distilled from the 3b1b/videos scene code: one colour per concept, yellow only for "look here", new objects grow out of existing ones, pause after every move. Manim adapter in `manim.md`, sample scene `example_scene.py`
+- `styles/桑尼新聞短片/` — Sunny Data Science vertical news short (Shorts / Reels): reference-short layout, CIS brand (logo, colors, fonts), cover system C with an AI cover prompt, 3 s animated outro, fixed spoken sign-off, news-pace voice, studio audio spec, mandatory reviewer pass, publishing package. Its `tools/` (short.py, prosody.py, vocal_qc.py, covers.py, signoff.py) are copied into `<videos_dir>/edit/tools/`.
+
+When the user asks for a Sunny Data Science / 桑尼 news short, read `styles/桑尼新聞短片/STYLE.md` first and follow it.
 
 ## The process
 
