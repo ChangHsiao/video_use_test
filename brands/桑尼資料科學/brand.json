@@ -13,10 +13,34 @@
   "logo": {"tile": "logo/logo_main_1x1.png", "mark": "logo/dark.svg"},
   "outro": {"vertical": "assets/outro_A_3s.mp4", "vertical_4s": "assets/outro_A_4s.mp4"},
   "signoff": {
-    "audio": "assets/signoff.wav",
-    "text": "這裡是桑尼資料科學，每週用數據，拆解一則科技大事。",
+    "audio": "assets/signoff_sunny_podcast.wav",
+    "text": "這裡是 Sunny 資料科學，每週用數據，拆解一則科技大事。",
     "show": "這裡是桑尼資料科學　每週用數據拆解一則科技大事",
     "en": "Sunny Data Science: one tech story, decoded with data, every week."
   },
-  "voices": {"male": "CG56nF519jHs9bMWKdXk", "female": "gGmJOmvg7PPQJ8AkL8Yd"}
+  "voices": {"male": "CG56nF519jHs9bMWKdXk", "female": "gGmJOmvg7PPQJ8AkL8Yd"},
+  "mascot": {
+    "doc": "mascot/MASCOT.md", "stickers": "mascot/stickers/", "track_px": 300,
+    "color": "#F59E0B", "eye": "#FFFFFF", "pupil": "#050505",
+    "geometry": {"body_r": 1.0, "rays": 8, "ray_inner": 1.22, "ray_outer": 1.48, "ray_width": 0.10,
+                 "eye_dx": 0.32, "eye_y": 0.10, "eye_r": 0.13},
+    "expressions": ["idle", "blink", "look", "surprised", "thinking", "happy", "squash", "point",
+                    "wave", "spin", "shiver", "jump",
+                    "joy", "sad", "angry", "worried", "confused", "proud", "love", "sleepy", "excited", "embarrassed"],
+    "emotes": {
+      "names": ["question", "exclaim", "interrobang", "sweat", "heart", "sparkle", "anger", "idea", "zzz", "dots",
+                "check", "cross", "music"],
+      "colors": {"question": "#FFFFFF", "exclaim": "#FFFFFF", "interrobang": "#FFFFFF", "sweat": "#3B82F6",
+                 "heart": "#EF4444", "sparkle": "#FFFFFF", "anger": "#EF4444", "idea": "#FFFFFF", "zzz": "#FFFFFF",
+                 "dots": "#FFFFFF", "check": "#10B981", "cross": "#EF4444", "music": "#FFFFFF"},
+      "blush": "#BA4D43", "blush_opacity": 0.6
+    },
+    "motion": {
+      "mouth": {"shape": "d", "w": 0.3, "h_open": 0.28, "h_closed": 0.045, "y": -0.33}
+    }
+  },
+  "series": {
+    "explainer": {"name": "經典乾貨拆解", "slogan": "把一個為什麼，拆到你懂。",
+                  "outro": "assets/outro_explainer.mp4", "signoff": "assets/signoff_explainer.wav"}
+  }
 }

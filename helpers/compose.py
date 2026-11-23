@@ -22,6 +22,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 # helpers/ is only on sys.path when this runs as a script; tests load it by file path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import mascot as mascot_engine  # noqa: E402
 import registry  # noqa: E402
 from registry import hex_rgb  # noqa: E402,F401  （測試和舊程式用 compose.hex_rgb）
 
@@ -90,7 +91,7 @@ def load_style(name):
     if style.layout != LAYOUT:
         raise ComposeError(f"風格「{name}」的版型是 {style.layout}，compose.py 只畫 {LAYOUT}"
                            f"（新聞短片的 news_band 用 helpers/news_short.py）")
-    return dict(style.data, colors=style.colors, name=str(name))
+    return dict(style.data, colors=style.colors, name=str(name), brand=style.brand)
 
 
 # 換成另一個風格：之後畫的疊加層、B-roll 版面都照它
@@ -142,7 +143,64 @@ def load_plan(path):
         if section is not None and (not section.get("small") or not section.get("big")):
             raise ComposeError(f"{where}的 section 要有 small 和 big")
         out.append(shot)
-    return {"title": data.get("title") or {}, "shots": out, "path": path, "style": style["name"]}
+    mascot = data.get("mascot")
+    if mascot is not None:
+        if not style.get("mascot"):
+            raise ComposeError(f"{path.name} 寫了 mascot，但風格「{style['name']}」的 style.json 沒有 mascot 的位置")
+        if not style.get("brand") or not style["brand"].data.get("mascot"):
+            raise ComposeError(f"風格「{style['name']}」沒有掛品牌，或品牌沒有角色（brand.json 的 mascot）")
+        # "track" is only used by the old fixed-position track path (write_video(mascot=...)); kept for compatibility
+        mascot = dict(mascot, track=path.parent / mascot.get("track", "mascot/track.mov"))
+    return {"title": data.get("title") or {}, "shots": out, "path": path, "style": style["name"], "mascot": mascot}
+
+
+# 合成.json 的 mascot.events → [(mascot.Event, 第幾句字幕)]。"at" 依序往後找字幕（規則同鏡頭的 from），
+# 事件從那句字幕開始＋offset 秒起算；"to"／"move"／"size" 是移動（"do" 可以不寫，只移動不換表情）；
+# "emote" 是頭旁邊的符號、"target" 是 point／look 要對準的畫面座標 [x, y]
+def resolve_mascot_events(raw_events, cues):
+    events, after = [], -1
+    for i, ev in enumerate(raw_events or [], 1):
+        if "at" not in ev or not any(k in ev for k in ("do", "to", "size", "emote")):
+            raise ComposeError(f"mascot.events 第 {i} 個要有 \"at\"（字幕文字），和 \"do\"（表情）、\"emote\"（符號）或 \"to\"（移動目標）")
+        try:
+            idx = find_cue(cues, ev["at"], after)
+        except ComposeError as e:
+            raise ComposeError(f"mascot.events 第 {i} 個：{e}")
+        after = idx
+        to = ev.get("to")
+        if to is not None and not isinstance(to, str) and (not isinstance(to, (list, tuple)) or len(to) != 2):
+            raise ComposeError(f"mascot.events 第 {i} 個的 to 要是 [x, y] 或 home、left、right、center")
+        target = ev.get("target")
+        if target is not None and (not isinstance(target, (list, tuple)) or len(target) != 2
+                                   or not all(isinstance(v, (int, float)) for v in target)):
+            raise ComposeError(f"mascot.events 第 {i} 個的 target 要是 [x, y]（1080×1920 座標）")
+        hold, size, emote_hold = ev.get("hold"), ev.get("size"), ev.get("emote_hold")
+        e = mascot_engine.Event(round(cues[idx]["start"] + float(ev.get("offset", 0.0)), 3), ev.get("do", "move"),
+                                ev.get("dir"), None if hold is None else float(hold),
+                                to=tuple(to) if isinstance(to, list) else to, move=ev.get("move"),
+                                size=None if size is None else float(size), emote=ev.get("emote"),
+                                emote_hold=None if emote_hold is None else float(emote_hold),
+                                target=None if target is None else (float(target[0]), float(target[1])))
+        events.append((e, idx))
+    return events
+
+
+# 品牌角色的時間軸（每格即時畫）：位置、大小、走道從目前風格的 style.json mascot 讀，外型從品牌的 brand.json mascot 讀。
+# features 是配音的音量／音高（mascot.voice_features），沒給就是不說話
+def make_mascot(plan, cues, features=None, duration=None):
+    spec_pos, brand = STYLE["mascot"], STYLE["brand"]
+    try:
+        spec = mascot_engine.spec_from_brand(brand)
+    except registry.ConfigError as e:
+        raise ComposeError(str(e))
+    resolved = resolve_mascot_events((plan["mascot"] or {}).get("events"), cues)
+    try:
+        return mascot_engine.MascotTimeline(
+            spec, [e for e, _ in resolved], features, FPS,
+            home=(spec_pos["x"], spec_pos["y"], spec_pos["size"]), lane=spec_pos.get("lane"),
+            seed=int((plan["mascot"] or {}).get("seed", 0)), duration=duration)
+    except ValueError as e:
+        raise ComposeError(f"mascot.events：{e}")
 
 
 # 算每個鏡頭的開始、結束秒數；鏡頭放到下一個鏡頭開始，最後一個放到片尾。素材不夠長就報錯
@@ -438,14 +496,30 @@ def ease_out(x):
 
 # 疊加層：算某個時間點畫面上有哪些文字，畫成透明背景的圖。座標以 1080×1920 設計，乘上 scale 輸出
 class Overlay:
-    def __init__(self, title, shots, cues, scale, font, fallback=None):
+    def __init__(self, title, shots, cues, scale, font, fallback=None, mascot=None):
         self.shots, self.cues, self.scale = shots, cues, scale
+        self.mascot = mascot  # mascot.MascotTimeline：畫在最底層（文字、標題卡都蓋在它上面）
+        self._text_cache = (None, None)
         self.bold, self.regular, self.index = font
         self.fallback = fallback_fonts() if fallback is None else fallback
         self.title = title_parts(title.get("text", ""), title.get("accent", [])) if title.get("text") else []
         self.w, self.h = int(WIDTH * scale), int(HEIGHT * scale)
         self._fonts, self._texts, self._glyphs = {}, {}, {}
         self.gradient = self._make_gradient()
+        self.logo = self._load_logo()
+
+    # 品牌 logo（style.json 的 logo 寫位置和大小、brand.json 的 logo.tile 是圖檔）；沒有就不畫
+    def _load_logo(self):
+        spec, brand = STYLE.get("logo"), STYLE.get("brand")
+        tile = brand.asset(brand.data.get("logo", {}).get("tile", "")) if spec and brand else None
+        if not tile:
+            return None
+        size = max(1, int(round(spec["size"] * self.scale)))
+        img = Image.open(tile).convert("RGBA").resize((size, size), Image.LANCZOS)
+        if spec.get("opacity", 1.0) < 1.0:
+            img.putalpha(img.getchannel("A").point(lambda a: int(a * spec["opacity"])))
+        x, y = int(round(spec["x"] * self.scale - size / 2)), int(round(spec["y"] * self.scale - size / 2))
+        return img, (x, y)
 
     # 讀字型（同樣字級只讀一次）；which 是 -1 時讀主要字型，0 以上讀第幾個備用字型
     def font(self, size, bold=True, which=-1):
@@ -556,8 +630,24 @@ class Overlay:
     def cue_at(self, t):
         return next((i for i, c in enumerate(self.cues) if c["start"] <= t < c["end"]), None)
 
+    # 鏡頭的開關：合成.json 的鏡頭寫 "mascot": false（不畫品牌角色，例如片尾自己有角色）、
+    # "title": false（不畫頂部標題和 logo，例如片尾、全螢幕標題卡）。沒寫就是要畫
+    def shot_flag(self, t, name):
+        shot = next((s for s in self.shots if s["start"] <= t < s["end"]), None)
+        return True if shot is None else bool(shot.get(name, True))
+
+    def mascot_on(self, t):
+        return self.mascot is not None and self.shot_flag(t, "mascot")
+
     # 這一格畫面的「狀態」：兩格狀態相同就表示畫出來一樣，直接沿用上一張圖
     def frame_key(self, t):
+        key = self.text_key(t)
+        if self.mascot_on(t):
+            key += (("m", self.mascot.key(t, self.scale)),)
+        return key
+
+    # 文字層（角色以外）的狀態
+    def text_key(self, t):
         key = []
         for i in range(len(self.shots)):
             a = self.section_alpha(i, t)
@@ -567,10 +657,25 @@ class Overlay:
             if p is not None:
                 key.append(("n", i, p))
         key.append(("c", self.cue_at(t)))
+        key.append(("t", self.shot_flag(t, "title")))
         return tuple(key)
 
-    # 畫出時間 t 的疊加層：段落標題卡 → 數字卡 → 頂部標題 → 字幕（字幕最後畫，不會被蓋住）
+    # 畫出時間 t 的疊加層：角色 → 段落標題卡 → 數字卡 → logo → 頂部標題 → 字幕（字幕最後畫，不會被蓋住）。
+    # 角色每格都可能不同，文字層照狀態快取，只重畫角色再疊上去
     def render(self, t):
+        if not self.mascot_on(t):
+            return self.render_text(t)
+        key = self.text_key(t)
+        if self._text_cache[0] != key:
+            self._text_cache = (key, self.render_text(t))
+        canvas = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 0))
+        img, cx, cy = self.mascot.frame(t, self.scale, ss=4 if self.scale < 0.75 else 3)
+        canvas.paste(img, (int(round(cx - img.width / 2)), int(round(cy - img.height / 2))))  # empty canvas: plain copy
+        canvas.alpha_composite(self._text_cache[1])
+        return canvas
+
+    # 角色以外的疊加層
+    def render_text(self, t):
         canvas = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 0))
         for i, s in enumerate(self.shots):
             a = self.section_alpha(i, t)
@@ -592,10 +697,13 @@ class Overlay:
             self.put_text(canvas, n["label"], spec["label"], p)
             if n.get("note"):
                 self.put_text(canvas, n["note"], spec["note"], p, bold=False)
-        if self.title:
+        show_title = self.shot_flag(t, "title")
+        if self.logo and show_title:
+            canvas.alpha_composite(self.logo[0], self.logo[1])
+        if self.title and show_title:
             self.put_text(canvas, self.title, STYLE["title"])
         k = self.cue_at(t)
-        if k is not None:
+        if k is not None and self.cues[k]["show"]:  # an empty show is a line spoken without a caption (e.g. a sign-off over its own card)
             self.put_text(canvas, self.cues[k]["show"], STYLE["subtitle"]["zh"])
             if self.cues[k].get("en"):
                 self.put_text(canvas, self.cues[k]["en"], STYLE["subtitle"]["en"])
@@ -604,7 +712,7 @@ class Overlay:
 
 # 把疊加層逐格畫好，透過管線送進 ffmpeg 疊在底層影片上，再接上配音（audio 是 None 時沒有聲音）。
 # 畫面狀態沒變的格直接重送上一張圖，不重畫；回傳實際重畫了幾格
-def write_video(base, overlay, total, out_path, full=False, audio=None, first_frame=0):
+def write_video(base, overlay, total, out_path, full=False, audio=None, first_frame=0, mascot=None):
     frames = round(total * FPS) - first_frame
     encode = ["-c:v", "libx264", "-preset", "medium" if full else "veryfast", "-crf", "18" if full else "24",
               "-pix_fmt", "yuv420p"]
@@ -612,7 +720,18 @@ def write_video(base, overlay, total, out_path, full=False, audio=None, first_fr
            "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{overlay.w}x{overlay.h}", "-r", str(FPS), "-i", "pipe:0"]
     if audio:
         cmd += ["-i", str(audio)]
-    cmd += ["-filter_complex", "[0:v][1:v]overlay=0:0:format=auto,format=yuv420p[v]", "-map", "[v]"]
+    graph = "[0:v][1:v]overlay=0:0:format=auto,format=yuv420p[v]"
+    if mascot:
+        # old path: a pre-rendered fixed-position track (helpers/mascot_track.py) between picture and text.
+        # main() draws the mascot live inside the overlay instead (Overlay(mascot=...)); captions stay on top either way
+        spec, s = STYLE["mascot"], overlay.scale
+        size = int(round(spec["size"] * s))
+        x, y = int(round(spec["x"] * s - size / 2)), int(round(spec["y"] * s - size / 2))
+        cmd += ["-ss", f"{first_frame / FPS:.3f}", "-i", str(mascot["track"])]
+        m = 3 if audio else 2
+        graph = (f"[{m}:v]scale={size}:{size}:flags=lanczos,format=rgba[m];"
+                 f"[0:v][m]overlay={x}:{y}:format=auto[b];[b][1:v]overlay=0:0:format=auto,format=yuv420p[v]")
+    cmd += ["-filter_complex", graph, "-map", "[v]"]
     if audio:
         cmd += ["-map", "2:a", "-c:a", "aac", "-b:a", "192k"]
     cmd += [*encode, "-r", str(FPS), "-frames:v", str(frames), "-movflags", "+faststart", str(out_path)]
@@ -787,11 +906,21 @@ def main(argv=None):
             for x in issues:
                 print(f"- {x}", file=sys.stderr)
             return 2
+        live = None
+        if plan["mascot"]:
+            try:
+                features = mascot_engine.voice_features(voice, total, edit / "mascot" / "voice_features.npz",
+                                                        mascot_engine.spec_from_brand(STYLE["brand"]), FPS)
+            except (RuntimeError, OSError, registry.ConfigError) as e:
+                raise ComposeError(f"分析配音（角色的嘴型、音高）失敗：{e}")
+            live = make_mascot(plan, cues, features, total)
+            for w in live.warnings:
+                print(f"注意：{w}", file=sys.stderr)
         font = (args.font, args.font, 0) if args.font else default_font()
         if args.font and not Path(args.font).is_file():
             raise ComposeError(f"找不到字型檔：{args.font}")
         full = args.full or args.samples
-        overlay = Overlay(plan["title"], shots, cues, 1.0 if full else 0.5, font)
+        overlay = Overlay(plan["title"], shots, cues, 1.0 if full else 0.5, font, mascot=live)
 
         if args.samples:
             written = write_samples(shots, overlay, edit / "samples")

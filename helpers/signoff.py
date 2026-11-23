@@ -44,11 +44,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--edit", help="episode edit/ folder (default: the current folder)")
     ap.add_argument("--voice-dir", required=True)
+    ap.add_argument("--say", action="append", metavar="KEY=TEXT",
+                    help="candidate to record instead of the built-in news ones (repeatable), e.g. --say A=這裡是…")
     args = ap.parse_args()
+    candidates = dict(s.split("=", 1) for s in args.say) if args.say else CANDIDATES
     voice_id = json.loads((Path(args.voice_dir) / "voice.json").read_text(encoding="utf-8"))["voice_id"]
     OUT.mkdir(parents=True, exist_ok=True)
     key = load_key()
-    for name, text in CANDIDATES.items():
+    for name, text in candidates.items():
         raw = OUT / f"{name}_raw.mp3"
         if not raw.is_file():
             raw.write_bytes(tts(key, voice_id, text))

@@ -107,10 +107,12 @@ def main():
             lo, hi = SPEC.get(k, (None, None))
             mark = "" if lo is None else ("OK  " if lo <= v <= hi else "FAIL")
             print(f"  {mark:4} {k:30} {v:7.2f}" + ("" if lo is None else f"   spec {lo:g}..{hi:g}"))
-        if not SPEC["dropouts per min"][0] <= m["dropouts per min"] <= SPEC["dropouts per min"][1]:
+        if m["dropouts per min"] > 0:
             y, sr = librosa.load(path, sr=48000)
-            at = dropouts(y, sr, m["speech level dBFS"])
-            print("       dropouts at (s): " + ", ".join(f"{s:.2f}" for s in at[:20]) + (" ..." if len(at) > 20 else ""))
+            candidates = dropouts(y, sr, m["speech level dBFS"])
+            for start in range(0, len(candidates), 20):
+                times = ", ".join(f"{second:.2f}" for second in candidates[start:start + 20])
+                print(f"       dropout review candidates (s): {times}")
 
 
 if __name__ == "__main__":

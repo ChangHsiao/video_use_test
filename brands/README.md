@@ -41,6 +41,7 @@
 | `outro` | 片尾影片 |
 | `signoff` | 口播收尾：音檔、念的文字、字幕中英文 |
 | `voices` | 旁白聲音的 ElevenLabs voice id |
+| `mascot`（選填） | 品牌角色：顏色、幾何（`geometry`）、表情清單、表情包資料夾、規範文件。所有畫角色的程式（`helpers/mascot.py`、`helpers/mascot_track.py`、`templates/manim/sun_mascot.py`）都只讀這一份 |
 
 ## 目前有的品牌
 

@@ -1,5 +1,8 @@
 {
   "layout": "broll_top",
+  "brand": "桑尼資料科學",
+  "mascot": {"x": 150, "y": 1548, "size": 280, "lane": {"x": [110, 970], "y": [1490, 1600]}},
+  "logo": {"x": 56, "y": 56, "size": 64},
   "voice": {"profile": "explainer", "lufs": -16},
   "colors": {
     "yellow": "#ffff00", "blue": "#58c4dd", "teal": "#5cd0b3", "red": "#fc6255", "green": "#83c167",

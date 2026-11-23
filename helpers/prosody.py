@@ -97,11 +97,17 @@ PROFILES = {
                   "targets": {"punch": 5.0, "reveal": 5.2, "question": 5.2, "context": 6.4, "normal": 5.9}},
     "news": {"speed": 1.2, "tempo": (0.85, 1.55), "mid": 7.8, "pause": 0.72, "breath_min_pause": 0.36,
              "targets": {"punch": 6.4, "reveal": 6.6, "question": 6.6, "context": 8.0, "normal": 7.4}},
+    # reel: talking-head tool reels (reference: Nick Saraev, measured 2026-11-23 from Scribe word times: 3.9 words/s,
+    # ~6.3 syllables/s overall, only 8 pauses > 0.15 s in 50 s, longest 0.26 s). Cut at every line and re-space
+    # with near-jump-cut pauses; section breaks are as short as clause breaks.
+    "reel": {"speed": 1.2, "tempo": (0.9, 1.6), "mid": 8.0, "pause": 0.3, "section_pause": 0.3,
+             "breath_min_pause": 0.6, "chunk": "line",
+             "targets": {"punch": 7.0, "reveal": 7.2, "question": 7.2, "context": 8.4, "normal": 7.9}},
 }
 
 
 def use_profile(name):
-    global TEMPO_RANGE, MID_TARGET, PAUSE_SCALE, BREATH_MIN_PAUSE, CHUNK, BREATH_BELOW
+    global TEMPO_RANGE, MID_TARGET, PAUSE_SCALE, BREATH_MIN_PAUSE, CHUNK, BREATH_BELOW, PAUSE_SECTION
     prof = PROFILES[name]
     if prof is None:
         return
@@ -110,6 +116,7 @@ def use_profile(name):
     BREATH_MIN_PAUSE = prof.get("breath_min_pause", BREATH_MIN_PAUSE)
     CHUNK = prof.get("chunk", CHUNK)
     BREATH_BELOW = prof.get("breath_below", BREATH_BELOW)
+    PAUSE_SECTION = prof.get("section_pause", PAUSE_SECTION)
     for role, rate in prof["targets"].items():
         ROLE[role] = (rate, *ROLE[role][1:])
 
