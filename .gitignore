@@ -60,3 +60,6 @@ edl.json
 project.md
 
 docs/
+
+# Crash dumps (Git Bash on Windows)
+*.stackdump

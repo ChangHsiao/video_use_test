@@ -646,5 +646,83 @@ class StyleTest(unittest.TestCase):
         self.assertEqual(int(((band[..., 0] > 200) & (band[..., 2] < 120)).sum()), 0)
 
 
+
+class MascotLogoTest(unittest.TestCase):
+    """3b1b style carries the brand: logo in the text overlay, character track between picture and text."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        (self.dir / "anim.mp4").write_bytes(b"")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+        cp.use_style(cp.DEFAULT_STYLE)
+
+    def plan(self, style, mascot):
+        data = {"style": style, "title": {"text": "標題"}, "shots": [{"from": "a", "animation": "anim.mp4"}]}
+        if mascot is not None:
+            data["mascot"] = mascot
+        path = self.dir / "合成.json"
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        return cp.load_plan(path)
+
+    def test_mascot_needs_style_position(self):
+        with self.assertRaisesRegex(cp.ComposeError, "mascot"):
+            self.plan("暗色科技風", {"events": []})
+
+    def test_mascot_track_default_path(self):
+        plan = self.plan("3b1b", {"events": []})
+        self.assertEqual(plan["mascot"]["track"], self.dir / "mascot" / "track.mov")
+        self.assertIsNone(self.plan("3b1b", None)["mascot"])
+
+    def test_logo_drawn_in_overlay(self):
+        self.plan("3b1b", None)
+        ov = cp.Overlay({}, [], [], scale=0.5, font=cp.default_font())
+        self.assertIsNotNone(ov.logo)
+        spec = cp.STYLE["logo"]
+        px = ov.render(0.0).getpixel((int(spec["x"] * 0.5), int(spec["y"] * 0.5)))
+        self.assertGreater(px[3], 200)
+
+    def test_mascot_under_captions(self):
+        # live path: the mascot is drawn into the overlay first (no track.mov), captions on top of it
+        plan = self.plan("3b1b", {"events": [{"at": "字幕", "do": "happy"}]})
+        d = self.dir
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=540x960:r=30:d=1",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(d / "base.mp4")], check=True)
+        spec = cp.STYLE["mascot"]
+        cues = [make_cue(0, 0.0, 1.0, "字幕")]
+        live = cp.make_mascot(plan, cues)
+        self.assertEqual([e.do for e in live.events], ["happy"])
+        ov = cp.Overlay({}, [], cues, scale=0.5, font=cp.default_font(), mascot=live)
+        self.assertNotEqual(ov.frame_key(0.2), ov.frame_key(0.6))  # the mascot moves: frames are redrawn
+        cp.write_video(d / "base.mp4", ov, 1.0, d / "out.mp4")
+        self.assertFalse((d / "mascot" / "track.mov").exists())
+        frame = d / "f.png"
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", "0.5", "-i", str(d / "out.mp4"), "-frames:v", "1",
+                        str(frame)], check=True)
+        cx, cy = live.frame(0.5, 0.5)[1:]
+        r, g, b = Image.open(frame).convert("RGB").getpixel((int(cx), int(cy + 8)))  # body below the eyes (amber)
+        self.assertGreater(r, 180)
+        self.assertLess(b, 80)
+        # a mascot parked on the caption line stays under the caption text
+        live_low = cp.mascot_engine.MascotTimeline(live.spec, [], home=(540, spec["y"] + 112, 600), auto_blink=False)
+        top = np.asarray(cp.Overlay({}, [], cues, scale=0.5, font=cp.default_font(), mascot=live_low).render(0.5))
+        bare = np.asarray(cp.Overlay({}, [], cues, scale=0.5, font=cp.default_font()).render(0.5))
+        text = bare[..., 3] == 255
+        self.assertGreater(int(text.sum()), 50)
+        self.assertTrue(np.array_equal(top[text][:, :3], bare[text][:, :3]))  # caption pixels unchanged
+
+    def test_mascot_events_resolve_with_moves(self):
+        plan = self.plan("3b1b", {"events": [{"at": "字幕", "to": [2000, 1500], "move": "hop"},
+                                             {"at": "第二", "do": "point", "dir": "right", "to": "home", "size": 240}]})
+        cues = [make_cue(0, 0.0, 1.0, "字幕"), make_cue(0, 1.2, 2.0, "第二句")]
+        live = cp.make_mascot(plan, cues)
+        self.assertEqual([(e.t, e.do, e.move) for e in live.events], [(0.0, "move", "hop"), (1.2, "point", None)])
+        self.assertEqual(len(live.warnings), 1)  # x 2000 clamped into the lane
+        self.assertEqual(live.place(5.0)[2], 240.0)
+        with self.assertRaises(cp.ComposeError):
+            cp.make_mascot(self.plan("3b1b", {"events": [{"at": "字幕"}]}), cues)
+
 if __name__ == "__main__":
     unittest.main()

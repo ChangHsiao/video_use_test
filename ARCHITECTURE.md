@@ -31,6 +31,7 @@
  │ 引擎層  helpers/             Python 工具：取得素材、轉錄、剪接、配音、合成     │
  │         templates/remotion/  說明動畫的零件庫（React）                       │
  │         skills/manim-video/  Manim 動畫引擎（外部引入）                      │
+ │         templates/manim/     Manim 共用元件（品牌角色 sun_mascot.py）        │
  ├──────────────────────────────────────────────────────────────────────────┤
  │ 驗證    tests/     每一層的契約都有測試                                      │
  └──────────────────────────────────────────────────────────────────────────┘
@@ -66,7 +67,10 @@
 | `企劃.md`、`稿子.md`、`分鏡表.md` | Agent | 使用者確認；Agent 寫分鏡檔 |
 | `voice_lines.json`、`cues.json`、`master.srt` | `align_voice.py` 或 `voice_tts.py` | `compose.py`、Remotion 零件庫 |
 | `voice/錄音室版/<tag>.json` | `prosody.py` | `news_short.py` |
-| `合成.json` | Agent | `compose.py` |
+| `合成.json` | Agent | `compose.py`、`mascot_track.py`、`mascot_qa.py`（讀 `mascot.events`） |
+| `mascot_qa/report.md`＋截圖 | `mascot_qa.py` | 使用者、Agent（出預覽前要全部 PASS） |
+| `mascot/voice_features.npz` | `compose.py`、`mascot_track.py`（配音的音量、音高，依音檔修改時間自動重算） | 同左（角色的嘴型、起伏） |
+| `mascot/track.mov` | `mascot_track.py`（固定大小的角色軌，給其他流程） | 其他流程；`compose.py` 已改成每格即時畫角色 |
 | `短片.json` | Agent | `news_short.py` |
 | `edl.json` | Agent | `render.py`、`export_xml.py` |
 | `project.md` | Agent | 下一次工作階段的 Agent |
