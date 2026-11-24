@@ -1,0 +1,28 @@
+{
+  "layout": "broll_wide",
+  "canvas": {"w": 1920, "h": 1080},
+  "text_max_w": 1700,
+  "colors": {
+    "red": "#ff5a3c", "cyan": "#7fd8ff", "amber": "#ffb340", "green": "#5be08a", "white": "#ffffff",
+    "line": "#c9d1db", "dim": "#8a93a0", "small": "#aab3bf", "sub": "#ffd43b"
+  },
+  "number_colors": ["red", "cyan", "amber", "green", "white"],
+  "broll": {"bg_zoom": 1.15, "bg_dim": 0.45},
+  "title": {"size": 44, "y": 70, "color": "white", "accent": "red"},
+  "number": {
+    "big": {"size": 110, "y": 470, "color": "white"},
+    "label": {"size": 40, "y": 570, "color": "line"},
+    "note": {"size": 28, "y": 625, "color": "dim"}
+  },
+  "section": {
+    "background": ["#1c2129", "#0b0d10"],
+    "text": {
+      "small": {"size": 38, "y": 470, "color": "small"},
+      "big": {"size": 100, "y": 570, "color": "red"}
+    }
+  },
+  "subtitle": {
+    "zh": {"size": 52, "y": 940, "color": "sub"},
+    "en": {"size": 32, "y": 1000, "color": "white"}
+  }
+}

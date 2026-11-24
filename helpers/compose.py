@@ -5,6 +5,7 @@
 
 同一個資料夾要有 align_voice.py 的輸出 cues.json 和它讀的 voice_lines.json。合成.json 的格式和使用步驟見 sop/科普短片.md 第 13 步；
 畫面風格由 合成.json 的 "style" 指定（styles/ 底下的資料夾名稱），沒寫就用「暗色科技風」。
+直式、橫式由風格的版型決定：broll_top 是 1080×1920，broll_wide 照風格的 canvas（例如「暗色科技風_橫式」是 1920×1080）。
 """
 
 import json
@@ -27,13 +28,13 @@ import registry  # noqa: E402
 from registry import hex_rgb  # noqa: E402,F401  （測試和舊程式用 compose.hex_rgb）
 
 
-# ---------- 風格：顏色、字級、位置從 styles/<風格名稱>/style.json 讀（由 registry.py 讀取和檢查，欄位說明見 styles/README.md），座標以 1080×1920 為準 ----------
+# ---------- 風格：顏色、字級、位置從 styles/<風格名稱>/style.json 讀（由 registry.py 讀取和檢查，欄位說明見 styles/README.md），座標以風格的畫面尺寸為準 ----------
 STYLES_DIR = registry.STYLES_DIR
-LAYOUT = "broll_top"  # 這支程式畫的版型；其他版型的風格（例如新聞短片的 news_band）要用自己的合成程式
+LAYOUTS = ("broll_top", "broll_wide")  # 這支程式畫的版型：直式、橫式；其他版型的風格（例如新聞短片的 news_band）要用自己的合成程式
 DEFAULT_STYLE = "暗色科技風"  # 合成.json 沒寫 style 時用這個
 STYLE = {}  # 目前用的風格，由 use_style() 換；檔案最後會先載入預設風格
-WIDTH, HEIGHT = 1080, 1920
-TEXT_MAX_W = 1000  # 一行最寬多少，超過就縮小字級
+DEFAULT_CANVAS = (1080, 1920)  # 風格沒寫 canvas 時的畫面尺寸（broll_top 的風格都沒寫）
+DEFAULT_TEXT_MAX_W = 1000  # 風格沒寫 text_max_w 時，一行最寬多少，超過就縮小字級
 SECTION_LEAD = 0.3  # 段落標題卡在切點前幾秒開始淡入，切點那一格完整顯示（11/6 有 2 處閃是因為切過去才淡入）
 SECTION_HOLD = 1.8  # 段落標題卡從切點起顯示幾秒（最後 0.3 秒淡出）
 NUMBER_FADE = 0.35
@@ -88,8 +89,8 @@ def load_style(name):
         style = registry.load_style(name, root=STYLES_DIR)
     except registry.ConfigError as e:
         raise ComposeError(str(e))
-    if style.layout != LAYOUT:
-        raise ComposeError(f"風格「{name}」的版型是 {style.layout}，compose.py 只畫 {LAYOUT}"
+    if style.layout not in LAYOUTS:
+        raise ComposeError(f"風格「{name}」的版型是 {style.layout}，compose.py 只畫 {'、'.join(LAYOUTS)}"
                            f"（新聞短片的 news_band 用 helpers/news_short.py）")
     return dict(style.data, colors=style.colors, name=str(name), brand=style.brand)
 
@@ -99,6 +100,16 @@ def use_style(name):
     global STYLE
     STYLE = load_style(name)
     return STYLE
+
+
+# 目前風格的畫面尺寸 (寬, 高) 和一行最寬
+def canvas():
+    c = STYLE.get("canvas")
+    return (int(c["w"]), int(c["h"])) if c else DEFAULT_CANVAS
+
+
+def text_max_w():
+    return STYLE.get("text_max_w", DEFAULT_TEXT_MAX_W)
 
 
 # 讀 合成.json 並檢查欄位（style 是風格名稱，沒寫就用預設風格）：畫面三選一（或只有段落標題）、B-roll 要有起點、素材檔要存在；路徑換成完整路徑
@@ -394,9 +405,11 @@ def video_size(path):
     return (h, w) if abs(rotation) % 180 == 90 else (w, h)
 
 
-# 做一個鏡頭的底層畫面：橫式 B-roll 中間放原畫面、上下用模糊背景填滿；直式素材鋪滿；只有標題卡的鏡頭放黑畫面
+# 做一個鏡頭的底層畫面：素材和畫面方向相同就鋪滿；直式畫面放橫式 B-roll 時貼在 broll.top、上下補模糊背景；
+# 橫式畫面放直式 B-roll 時置中、左右補模糊背景；只有標題卡的鏡頭放黑畫面
 def shot_command(shot, frames, out_file, scale, encode):
-    w, h = int(WIDTH * scale), int(HEIGHT * scale)
+    cw, ch = canvas()
+    w, h = int(cw * scale), int(ch * scale)
     if shot["picture"] is None:
         return ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c=black:s={w}x{h}:r={FPS}",
                 "-frames:v", str(frames), *encode, str(out_file)]
@@ -404,13 +417,18 @@ def shot_command(shot, frames, out_file, scale, encode):
     # B-roll 從 in 開始取；動畫和講者從頭開始，只合成一段樣片時從 offset 開始
     start = float(shot.get("in", 0.0)) if shot["picture"] == "broll" else float(shot.get("offset", 0.0))
     sw, sh = video_size(src)
-    if shot["picture"] == "broll" and sw > sh:
-        b = STYLE["broll"]
+    b = STYLE["broll"]
+    dim = f"colorchannelmixer=rr={b['bg_dim']}:gg={b['bg_dim']}:bb={b['bg_dim']}[bg];"
+    if shot["picture"] == "broll" and sw > sh and h > w:
         bh = int(h * b["bg_zoom"])
         graph = (f"[0:v]fps={FPS},split[a][b];"
-                 f"[a]scale=-2:{bh // 4},boxblur=6:2,scale=-2:{bh},crop={w}:{h},"
-                 f"colorchannelmixer=rr={b['bg_dim']}:gg={b['bg_dim']}:bb={b['bg_dim']}[bg];"
+                 f"[a]scale=-2:{bh // 4},boxblur=6:2,scale=-2:{bh},crop={w}:{h}," + dim +
                  f"[b]scale={w}:-2[fg];[bg][fg]overlay=0:{int(b['top'] * scale)},setsar=1[v]")
+    elif shot["picture"] == "broll" and sh > sw and w > h:
+        bw = int(w * b["bg_zoom"])
+        graph = (f"[0:v]fps={FPS},split[a][b];"
+                 f"[a]scale={bw // 4}:-2,boxblur=6:2,scale={bw}:-2,crop={w}:{h}," + dim +
+                 f"[b]scale=-2:{h}[fg];[bg][fg]overlay=(W-w)/2:0,setsar=1[v]")
     else:
         graph = f"[0:v]fps={FPS},scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1[v]"
     return ["ffmpeg", "-v", "error", "-y", "-ss", f"{start:.3f}", "-i", str(src), "-filter_complex", graph,
@@ -494,7 +512,7 @@ def ease_out(x):
     return 1 - (1 - x) ** 3
 
 
-# 疊加層：算某個時間點畫面上有哪些文字，畫成透明背景的圖。座標以 1080×1920 設計，乘上 scale 輸出
+# 疊加層：算某個時間點畫面上有哪些文字，畫成透明背景的圖。座標以風格的畫面尺寸設計，乘上 scale 輸出
 class Overlay:
     def __init__(self, title, shots, cues, scale, font, fallback=None, mascot=None):
         self.shots, self.cues, self.scale = shots, cues, scale
@@ -503,7 +521,8 @@ class Overlay:
         self.bold, self.regular, self.index = font
         self.fallback = fallback_fonts() if fallback is None else fallback
         self.title = title_parts(title.get("text", ""), title.get("accent", [])) if title.get("text") else []
-        self.w, self.h = int(WIDTH * scale), int(HEIGHT * scale)
+        cw, ch = canvas()
+        self.w, self.h = int(cw * scale), int(ch * scale)
         self._fonts, self._texts, self._glyphs = {}, {}, {}
         self.gradient = self._make_gradient()
         self.logo = self._load_logo()
@@ -561,7 +580,7 @@ class Overlay:
         while True:
             runs = [(r, f, c) for t, c in parts for r, f in self.glyph_runs(t, size, bold)]
             widths = [f.getlength(r) for r, f, _ in runs]
-            if sum(widths) <= TEXT_MAX_W * self.scale or size <= 20:
+            if sum(widths) <= text_max_w() * self.scale or size <= 20:
                 break
             size -= 2
         ascent, descent = self.font(size, bold).getmetrics()
@@ -857,7 +876,7 @@ def sample_times(shots, cues):
     return times
 
 
-# 輸出樣張：截底層畫面的那一格，疊上那一刻的疊加層，存成 1080×1920 的 PNG
+# 輸出樣張：截底層畫面的那一格，疊上那一刻的疊加層，存成風格畫面尺寸（直式 1080×1920）的 PNG
 def write_samples(shots, overlay, out_dir):
     out_dir = Path(out_dir)
     if out_dir.exists():
@@ -885,7 +904,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="合成.json → 預覽影片（換鏡頭檢查沒過時不合成）")
     p.add_argument("plan", help="edit/合成.json；同一個資料夾要有 cues.json、voice_lines.json")
     mode = p.add_mutually_exclusive_group()
-    mode.add_argument("--full", action="store_true", help="輸出 1080×1920 正式版 edit/final.mp4")
+    mode.add_argument("--full", action="store_true", help="輸出原尺寸（直式 1080×1920、橫式照風格）的正式版 edit/final.mp4")
     mode.add_argument("--samples", action="store_true", help="輸出確認點 4 的樣張到 edit/samples/")
     mode.add_argument("--clip", nargs="+", type=float, metavar=("開始秒數", "長度"),
                       help="只合成一段樣片 edit/clip.mp4，長度預設 12 秒")
