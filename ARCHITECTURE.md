@@ -51,7 +51,7 @@
 | 模式 | 在哪裡 | 解決什麼 |
 |---|---|---|
 | **登記處（Registry）＋外掛** | `helpers/registry.py`：`styles/`、`brands/` 照資料夾自動發現；版型用 `@register_layout` 登記 | 加一個風格或品牌只要放一個資料夾，不改程式（熱插拔） |
-| **策略（Strategy）** | 版型（layout）：`broll_top` 由 `compose.py` 畫、`news_band` 由 `news_short.py` 畫；每個版型有自己的欄位檢查 | 不同的畫面排法各自一套，風格只要說用哪一個 |
+| **策略（Strategy）** | 版型（layout）：`broll_top`、`broll_wide`（橫式）由 `compose.py` 畫，`news_band` 由 `news_short.py` 畫；每個版型有自己的欄位檢查 | 不同的畫面排法各自一套，風格只要說用哪一個 |
 | **責任鏈（Chain of Responsibility）** | `Style.asset()`：影片資料夾 → 風格資料夾 → 品牌資料夾，第一個找到的生效 | 單集可以蓋過風格，風格可以蓋過品牌，不用複製整份素材 |
 | **值物件（Value Object）** | `registry.Style`、`registry.Brand`（不可變的 dataclass） | 風格讀進來之後不會被半路改掉；顏色已經合併好（品牌的顏色加上風格自己的） |
 | **相同的管線階段** | 兩個合成程式都是：讀分鏡 → 算時間軸 → 底層畫面 → 疊加層 → 混音 → 輸出 | 新版型照同樣的階段寫，檢查點（樣張、樣片）對得上 |
@@ -82,10 +82,10 @@
 | | 短片（9:16） | 長片（16:9） |
 |---|---|---|
 | 產品線 | `sop/科普短片.md`、`sop/新聞短片.md` | 還沒寫（`sop/科普長片.md`） |
-| 版型 | `broll_top`、`news_band` | 新增一個版型，在 `registry.py` 登記 |
+| 版型 | `broll_top`、`news_band` | `broll_wide`（風格：暗色科技風_橫式，位置暫定） |
 | 共用 | 研究、出處規則、配音工具、品牌、動畫零件、品質檢查 | 同左 |
 
-一個風格要同時支援長片和短片時，`style.json` 會分成兩段版面；品牌不用改。
+一個風格要同時支援長片和短片時，`style.json` 會分成兩段版面；品牌不用改。目前長片用另一個風格（暗色科技風_橫式），還沒做成兩段。
 
 ## 要加新東西時放哪裡
 
@@ -107,6 +107,6 @@
 
 ## 還沒做的
 
-- `sop/科普長片.md` 和長片版型
+- `sop/科普長片.md`；長片版型已有 `broll_wide`，位置和字級還是暫定值
 - `transcribe.py` 和 `voice_tts.py` 各有一份讀 ElevenLabs 金鑰的程式，可以合成一份
 - `styles/3b1b/theme.ts`、`templates/remotion/src/brands/` 沒有編譯過
