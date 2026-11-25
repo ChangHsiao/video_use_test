@@ -17,6 +17,7 @@
 | 版型 | 合成程式 | 畫面 |
 |---|---|---|
 | `broll_top`（沒寫 layout 時的預設） | `helpers/compose.py` | B-roll 放上方、模糊背景、頂部標題、數字卡、段落標題卡、雙語字幕 |
+| `broll_wide` | `helpers/compose.py` | 橫式版的 `broll_top`：畫面尺寸由風格決定（長影片 1920×1080），直式素材置中、左右補模糊背景 |
 | `news_band` | `helpers/news_short.py` | 模糊底加主畫面帶、資訊卡、原聲卡、雙語字幕、調色、溶接、封面和片尾 |
 
 ## 目前有的風格
@@ -25,6 +26,7 @@
 |---|---|---|---|
 | [暗色科技風](暗色科技風/STYLE.md) | 科普短片（預設） | `compose.py` | 暗色漸層底、紅色重點字、黃色字幕 |
 | [3b1b](3b1b/STYLE.md) | 講原理、數學、演算法、AI 的解說片 | `compose.py`；動畫用 Manim 或 Remotion | 從 3Blue1Brown 的影片原始碼整理出來的畫面語言：全黑底、一個概念一個顏色、圖形從上一個圖形長出來 |
+| [暗色科技風_橫式](暗色科技風_橫式/STYLE.md) | 橫式長影片（暫定） | `compose.py`（版型 `broll_wide`） | 暗色科技風的橫式版，位置和字級是暫定值 |
 | [桑尼新聞短片](桑尼新聞短片/STYLE.md) | 新聞解說短片（`sop/新聞短片.md` 的預設） | `news_short.py`（版型 `news_band`） | 參考短片的版面、品牌桑尼資料科學、封面系統 C |
 
 ## 一個風格資料夾放什麼
@@ -39,7 +41,7 @@
 | `manim.md`、範例場景 | 選用 | 用 Manim 做動畫的 Agent | 這個風格在 Manim 的設定；和 `skills/manim-video/SKILL.md` 的預設值不一樣的地方，以風格為準 |
 | `assets/`、`examples/` | 選用 | — | 這個風格專用的素材（例如配樂）和範例。品牌共用的素材（logo、片尾）放品牌資料夾；工具放 `helpers/` |
 
-`合成.json` 的 `"style"` 只能指到 `broll_top` 的風格；指到其他版型時 `compose.py` 會報錯，告訴你該用哪支程式。
+`合成.json` 的 `"style"` 只能指到 `broll_top`、`broll_wide` 的風格；指到其他版型時 `compose.py` 會報錯，告訴你該用哪支程式。
 
 ### `broll_top` 版型的欄位（`compose.py` 讀的）
 
@@ -84,6 +86,17 @@
 | `mascot`（選填） | 品牌角色的家（起點）：中心位置 `x`、`y` 和顯示大小 `size`；`lane` 是角色走道 `{"x": [x0, x1], "y": [y0, y1]}`，角色的中心只能在這個範圍裡移動（要避開說明動畫），沒寫就不限制。`helpers/compose.py` 每格即時畫角色，疊在畫面上、文字下面，字幕永遠在最上層；`合成.json` 寫了 `mascot` 才畫 |
 
 缺欄位、顏色寫錯、用到 `colors` 沒有的名稱，`registry.py` 載入時就報錯，不會合成到一半才壞。
+
+### `broll_wide` 版型的欄位（`compose.py` 讀的）
+
+範例是 [暗色科技風_橫式/style.json](暗色科技風_橫式/style.json)。欄位和 `broll_top` 一樣，差在：
+
+| 欄位 | 意思 |
+|---|---|
+| `canvas` | 畫面寬高 `{"w", "h"}`，其他欄位的座標都以它為準 |
+| `text_max_w` | 一行最寬多少，超過就縮小字級（`broll_top` 固定 1000） |
+| `broll` | 只要 `bg_zoom`、`bg_dim`：直式素材置中，左右用同一個畫面放大、模糊、調暗補滿；不需要 `top` |
+| `logo`、`mascot` | 還不支援，寫了就報錯 |
 
 ### `news_band` 版型的欄位（`news_short.py` 讀的）
 

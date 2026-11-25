@@ -553,6 +553,20 @@ class MainTest(unittest.TestCase):
         with Image.open(files[0]) as img:
             self.assertEqual(img.size, (1080, 1920))
 
+    # 合成.json 選橫式風格：樣張都是 1920×1080
+    def test_samples_landscape(self):
+        self.addCleanup(cp.use_style, cp.DEFAULT_STYLE)
+        plan = json.loads((self.edit / "合成.json").read_text(encoding="utf-8"))
+        plan["style"] = "暗色科技風_橫式"
+        (self.edit / "合成.json").write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+        code, err = self.run_main("--samples")
+        self.assertEqual(code, 0, err)
+        files = sorted((self.edit / "samples").glob("*.png"))
+        self.assertEqual(len(files), 3)
+        for f in files:
+            with Image.open(f) as img:
+                self.assertEqual(img.size, (1920, 1080))
+
     # 素材在鏡頭開頭換畫面：停下來、輸出對照圖、不合成；加上 cut_ok 後就能合成
     def test_stops_on_cut(self):
         self.write_plan(2.7)  # 素材 3.0 秒換畫面，落在第二個鏡頭開頭 0.6 秒內
@@ -562,6 +576,52 @@ class MainTest(unittest.TestCase):
         self.assertFalse((self.edit / "preview.mp4").exists())
         self.write_plan(2.7, cut_ok=True)
         self.assertEqual(self.run_main()[0], 0)
+
+
+# 橫式風格（版型 broll_wide）的底層畫面：預覽是 960×540；直式素材置中、左右補模糊背景，橫式素材鋪滿
+class BuildBaseWideTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.dir = Path(cls.tmp.name)
+        cls.tall = cls.dir / "tall.mp4"  # 直的紅色 B-roll
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=c=red:s=108x192:r=30:d=5",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(cls.tall)], check=True)
+        cls.wide = cls.dir / "wide.mp4"  # 橫的藍色 B-roll
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=c=blue:s=160x90:r=30:d=5",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(cls.wide)], check=True)
+        shots = [
+            {"from": "a", "picture": "broll", "broll": cls.tall, "in": 0.0, "start": 0.0, "end": 1.0},
+            {"from": "b", "picture": "broll", "broll": cls.wide, "in": 0.0, "start": 1.0, "end": 2.0},
+        ]
+        cls.out = cls.dir / "base.mp4"
+        cp.use_style("暗色科技風_橫式")
+        try:
+            cp.build_base(shots, 2.0, cls.out, full=False)
+        finally:
+            cp.use_style(cp.DEFAULT_STYLE)  # 風格是整個模組共用的，換回預設，不影響其他測試
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_size(self):
+        out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0",
+                              str(self.out)], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(out, "960,540")
+
+    # 直式素材：中間是原畫面（亮紅，寬 540×108/192≈304），左右是放大模糊、調暗的同一個畫面（暗紅）
+    def test_tall_broll_centered(self):
+        f = frame_at(self.out, 0.5)
+        self.assertGreater(f[270, 480, 0], 200)
+        self.assertTrue(60 < f[270, 30, 0] < 160)
+        self.assertTrue(60 < f[270, 930, 0] < 160)
+
+    # 橫式素材鋪滿畫面
+    def test_wide_broll_fills(self):
+        f = frame_at(self.out, 1.5)
+        self.assertGreater(f[270, 20, 2], 200)
+        self.assertGreater(f[270, 940, 2], 200)
 
 
 class StyleTest(unittest.TestCase):

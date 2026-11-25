@@ -113,6 +113,30 @@ class FakeTreeTest(unittest.TestCase):
         with self.assertRaisesRegex(reg.ConfigError, "格式不對.*broll"):
             self.load("甲")
 
+    # 橫式版型 broll_wide：多 canvas、text_max_w，broll 不需要 top
+    def wide(self, **change):
+        data = dict(self.base, layout="broll_wide", canvas={"w": 1920, "h": 1080}, text_max_w=1700,
+                    broll={"bg_zoom": 1.15, "bg_dim": 0.45})
+        data.update(change)
+        return data
+
+    def test_broll_wide_loads(self):
+        self.write("style", "甲", self.wide())
+        self.assertEqual(self.load("甲").layout, "broll_wide")
+
+    def test_broll_wide_needs_canvas(self):
+        data = self.wide()
+        data.pop("canvas")
+        self.write("style", "甲", data)
+        with self.assertRaisesRegex(reg.ConfigError, "格式不對.*canvas"):
+            self.load("甲")
+
+    # 橫式還不支援 logo、吉祥物：寫了就報錯，不會合成出位置錯的畫面
+    def test_broll_wide_rejects_logo(self):
+        self.write("style", "甲", self.wide(logo={"x": 100, "y": 100, "size": 80}))
+        with self.assertRaisesRegex(reg.ConfigError, "logo"):
+            self.load("甲")
+
     def test_undefined_color(self):
         self.write("style", "甲", dict(self.base, title=dict(self.base["title"], accent="purple")))
         with self.assertRaisesRegex(reg.ConfigError, "purple"):

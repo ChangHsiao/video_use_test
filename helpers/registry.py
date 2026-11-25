@@ -112,16 +112,32 @@ def _numbers(spec, *keys):
         float(spec[k])
 
 
-@register_layout("broll_top")
-def _check_broll_top(style, colors):
-    """科普短片（helpers/compose.py）：B-roll 放上方、模糊背景、頂部標題、數字卡、段落標題卡、雙語字幕。"""
+# broll_top、broll_wide 共用的文字欄位：頂部標題、數字卡、段落標題卡、雙語字幕。回傳用到的顏色名稱
+def _check_broll_text(style):
     specs = [style["title"], *style["number"].values(), *style["section"]["text"].values(), *style["subtitle"].values()]
     for s in specs:
         _numbers(s, "size", "y")
-    _numbers(style["broll"], "top", "bg_zoom", "bg_dim")
     for c in style["section"]["background"]:
         hex_rgb(c)
     return [s["color"] for s in specs] + [style["title"]["accent"], *style["number_colors"]]
+
+
+@register_layout("broll_top")
+def _check_broll_top(style, colors):
+    """科普短片（helpers/compose.py）：B-roll 放上方、模糊背景、頂部標題、數字卡、段落標題卡、雙語字幕。"""
+    _numbers(style["broll"], "top", "bg_zoom", "bg_dim")
+    return _check_broll_text(style)
+
+
+@register_layout("broll_wide")
+def _check_broll_wide(style, colors):
+    """橫式（helpers/compose.py）：欄位同 broll_top，多畫面尺寸 canvas、一行最寬 text_max_w；直式素材置中、左右補模糊背景。"""
+    _numbers(style["canvas"], "w", "h")
+    _numbers(style, "text_max_w")
+    _numbers(style["broll"], "bg_zoom", "bg_dim")
+    if "logo" in style or "mascot" in style:
+        raise ValueError("橫式版型 broll_wide 還不支援 logo、吉祥物（mascot）")
+    return _check_broll_text(style)
 
 
 @register_layout("news_band")
