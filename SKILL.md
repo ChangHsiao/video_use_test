@@ -115,7 +115,7 @@ When the user asks for a science / tech explainer short, read `sop/科普短片.
 
 The look of a video lives outside the workflow, in two swappable layers (contracts in `styles/README.md` and `brands/README.md`):
 
-- `styles/<name>/` — a visual language: `STYLE.md` (rules to follow) and `style.json` (layout numbers). `"layout"` names the compositor that draws it: `broll_top` → `compose.py`, `news_band` → `news_short.py`. Optional `theme.ts` (Remotion), `manim.md` (Manim), `assets/`, `examples/`.
+- `styles/<name>/` — a visual language: `STYLE.md` (rules to follow) and `style.json` (layout numbers). `"layout"` names the compositor that draws it: `broll_top` / `broll_wide` (landscape) → `compose.py`, `news_band` → `news_short.py`. Optional `theme.ts` (Remotion), `manim.md` (Manim), `assets/`, `examples/`.
 - `brands/<name>/` — a channel identity shared by long and short videos: `BRAND.md` (outro, sign-off, voice rules) and `brand.json` (colours, fonts, logo, outro, sign-off, voices). A style attaches one with `"brand": "<name>"`.
 
 The style named in the plan goes into `合成.json` as `"style": "<folder name>"` (default `暗色科技風`) or into `news_short.py --style`. Read the style's `STYLE.md`, and its brand's `BRAND.md` if it has one, before making visuals.
