@@ -22,6 +22,8 @@ OUT = EDIT / "voice" / "signoff"
 # Slower and steadier than the news read: it has to sound the same every time and land on the name
 SETTINGS = {"stability": 0.65, "similarity_boost": 0.85, "style": 0.25, "speed": 0.98}
 SEED = 2026
+MODEL_ID = "eleven_v4"
+OUTPUT_FORMAT = "mp3_44100_192"
 
 CANDIDATES = {
     "A_數據說話": "科技大事，數據說話。我是桑尼資料科學。",
@@ -32,9 +34,9 @@ CANDIDATES = {
 
 
 def tts(key, voice_id, text):
-    body = {"text": text, "model_id": "eleven_v4", "seed": SEED, "voice_settings": SETTINGS}
+    body = {"text": text, "model_id": MODEL_ID, "seed": SEED, "voice_settings": SETTINGS}
     req = urllib.request.Request(
-        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_192",
+        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format={OUTPUT_FORMAT}",
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
         headers={"xi-api-key": key, "Content-Type": "application/json; charset=utf-8"})
     with urllib.request.urlopen(req, timeout=120) as r:

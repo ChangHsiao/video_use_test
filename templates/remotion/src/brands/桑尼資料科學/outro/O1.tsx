@@ -27,8 +27,10 @@ const Chip: React.FC<{f: number; at: number; kind: 'follow' | 'like' | 'share'; 
   );
 };
 
-// speed > 1 compresses the same choreography (3 s cut: speed 4/3)
-export const O1: React.FC<{speed?: number}> = ({speed = 1}) => {
+// speed > 1 compresses the same choreography (3 s cut: speed 4/3).
+// name / nameEn / slogan / footer come from brand.json through helpers/outro_props.py (render with --props).
+export type OutroText = {name: string; nameEn: string; slogan: string; footer: string};
+export const O1: React.FC<{speed?: number} & OutroText> = ({speed = 1, name: brandName, nameEn, slogan, footer}) => {
   const f = useCurrentFrame() * speed;
   const name = p(f, 30, 16);
   const pulse = 10 + 8 * Math.sin(f / 9);
@@ -40,11 +42,11 @@ export const O1: React.FC<{speed?: number}> = ({speed = 1}) => {
           <Mark size={300} draw={p(f, 4, 30)} fill={p(f, 28, 16)} eye={p(f, 40, 10)} glow={f > 40 ? pulse : 0} />
         </div>
         <div style={{marginTop: 40, fontFamily: FONT, fontSize: 92, fontWeight: 900, color: C.text, letterSpacing: 8,
-          opacity: name, transform: `translateY(${(1 - name) * 40}px)`}}>桑尼資料科學</div>
+          opacity: name, transform: `translateY(${(1 - name) * 40}px)`}}>{brandName}</div>
         <div style={{marginTop: 6, fontFamily: FONT_EN, fontSize: 30, fontWeight: 600, color: C.mint,
-          letterSpacing: interpolate(name, [0, 1], [2, 14]), opacity: name}}>SUNNY DATA SCIENCE</div>
+          letterSpacing: interpolate(name, [0, 1], [2, 14]), opacity: name}}>{nameEn.toUpperCase()}</div>
         <div style={{marginTop: 48, fontFamily: FONT, fontSize: 46, fontWeight: 500, color: C.text, opacity: p(f, 46, 12)}}>
-          用數據，看懂科技大事。
+          {slogan}
         </div>
         <div style={{display: 'flex', gap: 22, marginTop: 70}}>
           <Chip f={f} at={60} kind="follow" label="追蹤" />
@@ -52,7 +54,7 @@ export const O1: React.FC<{speed?: number}> = ({speed = 1}) => {
           <Chip f={f} at={76} kind="share" label="分享" />
         </div>
         <div style={{marginTop: 34, fontFamily: FONT, fontSize: 32, color: C.sub, opacity: p(f, 86, 12)}}>
-          每週拆解一則科技大事
+          {footer}
         </div>
       </AbsoluteFill>
     </AbsoluteFill>

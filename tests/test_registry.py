@@ -41,8 +41,11 @@ class RepoStylesTest(unittest.TestCase):
     def test_brand_assets_exist(self):
         for name in reg.available(reg.BRANDS_DIR, "brand.json"):
             brand = reg.load_brand(name)
+            series = brand.data.get("series", {}).values()
             files = [*brand.data.get("logo", {}).values(), *brand.data.get("outro", {}).values(),
-                     brand.data.get("signoff", {}).get("audio")]
+                     brand.data.get("signoff", {}).get("audio"), *brand.data.get("voice_dna", {}).values(),
+                     *(s.get("outro") for s in series), *(s.get("outro_a", {}).get("video") for s in series),
+                     *(s.get("signoff", {}).get("audio") for s in series)]
             for rel in filter(None, files):
                 with self.subTest(brand=name, file=rel):
                     self.assertIsNotNone(brand.asset(rel), rel)

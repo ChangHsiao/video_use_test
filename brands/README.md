@@ -34,13 +34,16 @@
 
 | 欄位 | 意思 |
 |---|---|
-| `name`、`tagline`、`slogan` | 品牌名稱、標語（靜態片尾卡用）、口號（動畫片尾用） |
+| `name`、`name_en`、`tagline`、`slogan` | 品牌名稱、英文名稱（片尾用，畫面上轉成大寫）、標語（靜態片尾卡用）、口號（動畫片尾用） |
 | `colors` | 顏色名稱 → `#rrggbb` |
 | `fonts` | `zh`、`en` 各一串候選路徑，相對路徑從品牌資料夾（或影片資料夾）找，也可以寫系統字型的絕對路徑；用第一個存在的 |
 | `logo` | `tile`（方形 logo）、`mark`（向量標誌） |
 | `outro` | 片尾影片 |
-| `signoff` | 口播收尾：音檔、念的文字、字幕中英文 |
+| `outro_a`（選填） | 片尾 A（數據流）的文字：`slogan`（沒寫就用 `slogan`）、`footer`（最下面一行小字）。`helpers/outro_props.py` 讀它產生 Remotion 的 `--props`，片尾程式裡不寫任何文字 |
+| `signoff` | 口播收尾：音檔、念的文字、字幕中英文，`voice` 是用哪個聲音（`voices` 的鍵） |
 | `voices` | 旁白聲音的 ElevenLabs voice id |
+| `voice_dna`（選填） | 聲音 → DNA 檔：`{"male": "assets/voice_dna/A1_男聲.json"}`。DNA 由 `helpers/voice_dna.py build` 從這個聲音的所有口播收尾量出來，新錄的音檔用 `check` 比對 |
+| `series`（選填） | 系列 → 這個系列自己的 `name`、`slogan`、`outro`、`outro_a`、`signoff`（欄位和品牌層一樣）。素材依系列放在 `assets/<系列名稱>/` |
 | `mascot`（選填） | 品牌角色：顏色、幾何（`geometry`）、表情清單、表情包資料夾、規範文件。所有畫角色的程式（`helpers/mascot.py`、`helpers/mascot_track.py`、`templates/manim/sun_mascot.py`）都只讀這一份 |
 
 ## 目前有的品牌

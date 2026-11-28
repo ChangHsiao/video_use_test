@@ -1,7 +1,9 @@
 {
   "name": "桑尼資料科學",
+  "name_en": "Sunny Data Science",
   "tagline": "不只學會，更要交付。",
   "slogan": "用數據，看懂科技大事。",
+  "outro_a": {"footer": "每週拆解一則科技大事"},
   "colors": {
     "mint": "#7EEBD9", "red": "#BA4D43", "teal": "#2C918C", "teal_dark": "#0F2D2B",
     "bg": "#050505", "navy": "#1E3A5F", "white": "#ffffff"
@@ -11,13 +13,14 @@
     "en": ["fonts/InterVariable.ttf"]
   },
   "logo": {"tile": "logo/logo_main_1x1.png", "mark": "logo/dark.svg"},
-  "outro": {"vertical": "assets/outro_A_3s.mp4", "vertical_4s": "assets/outro_A_4s.mp4"},
+  "outro": {"vertical": "assets/新聞短片/news_outro_A_3s.mp4", "vertical_4s": "assets/新聞短片/news_outro_A_4s.mp4"},
   "signoff": {
-    "audio": "assets/signoff_sunny_podcast.wav",
+    "audio": "assets/新聞短片/news_signoff.wav", "voice": "male",
     "text": "這裡是 Sunny 資料科學，每週用數據，拆解一則科技大事。",
     "show": "這裡是桑尼資料科學　每週用數據拆解一則科技大事",
     "en": "Sunny Data Science: one tech story, decoded with data, every week."
   },
+  "voice_dna": {"male": "assets/voice_dna/A1_男聲.json"},
   "voices": {"male": "CG56nF519jHs9bMWKdXk", "female": "gGmJOmvg7PPQJ8AkL8Yd"},
   "mascot": {
     "doc": "mascot/MASCOT.md", "stickers": "mascot/stickers/", "track_px": 300,
@@ -40,7 +43,15 @@
     }
   },
   "series": {
-    "explainer": {"name": "經典乾貨拆解", "slogan": "把一個為什麼，拆到你懂。",
-                  "outro": "assets/outro_explainer.mp4", "signoff": "assets/signoff_explainer.wav"}
+    "explainer": {"name": "經典乾貨拆解", "slogan": "帶你深入淺出，搞懂每一個為什麼。",
+                  "outro": "assets/經典乾貨拆解/explainer_outro_mascot_5s.mp4",
+                  "outro_a": {"video": "assets/經典乾貨拆解/explainer_outro_A_3s.mp4",
+                              "slogan": "用白話，理解生活科技。", "footer": "帶你深入淺出，搞懂每一個為什麼"},
+                  "signoff": {
+                    "audio": "assets/經典乾貨拆解/explainer_signoff.wav", "voice": "male",
+                    "text": "這裡是 Sunny 資料科學，帶你深入淺出，搞懂每一個為什麼。",
+                    "show": "這裡是桑尼資料科學　帶你深入淺出搞懂每一個為什麼",
+                    "en": "Sunny Data Science: every why, made simple."
+                  }}
   }
 }
