@@ -1,6 +1,6 @@
 """Record sign-off (spoken slogan) candidates once, in the studio chain, for reuse in every episode.
 
-Usage: python helpers/signoff.py --voice-dir /home/sunny/Videos/聲音範本/A1_男聲 [--edit DIR]
+Usage: python helpers/signoff.py --voice-dir A1_男聲 [--edit DIR]
   writes edit/voice/signoff/<key>.wav (+ .mp3) for each candidate below
 A sign-off is a sonic logo: generate it once, keep the chosen file, never regenerate it per episode.
 """
@@ -15,6 +15,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from prosody import SR, decode, finish  # noqa: E402
+from paths import resolve_voice_dir  # noqa: E402
 from voice_tts import EDIT, load_key  # noqa: E402
 
 OUT = EDIT / "voice" / "signoff"
@@ -43,12 +44,13 @@ def tts(key, voice_id, text):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--edit", help="episode edit/ folder (default: the current folder)")
-    ap.add_argument("--voice-dir", required=True)
+    ap.add_argument("--voice-dir", required=True,
+                    help="full path, or a template name under <videos root>/聲音範本/ (see helpers/paths.py)")
     ap.add_argument("--say", action="append", metavar="KEY=TEXT",
                     help="candidate to record instead of the built-in news ones (repeatable), e.g. --say A=這裡是…")
     args = ap.parse_args()
     candidates = dict(s.split("=", 1) for s in args.say) if args.say else CANDIDATES
-    voice_id = json.loads((Path(args.voice_dir) / "voice.json").read_text(encoding="utf-8"))["voice_id"]
+    voice_id = json.loads((resolve_voice_dir(args.voice_dir) / "voice.json").read_text(encoding="utf-8"))["voice_id"]
     OUT.mkdir(parents=True, exist_ok=True)
     key = load_key()
     for name, text in candidates.items():

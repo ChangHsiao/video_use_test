@@ -43,6 +43,26 @@
 - A 美式與 C 法式的單字拼接保留了俏皮感，兩端的音高及咬字轉換仍突兀。整句法式試稿曾重念開頭；用音高和速度拉出語氣的版本又出現機械感。定版改用 ElevenLabs 整句連讀，由使用者在連續試聽後選定 `C_warm_raw.mp3`。
 - 需要更換口號時，用現有 A1 聲線整句試錄，以同等音量接在正片最後一句後比較。逐字核對有沒有重複或漏字，並聽「是 → Sunny → 資料科學」的銜接。定版後沿用同一份乾聲，配樂與片尾混音在各集處理。
 
+## 系列：經典乾貨拆解
+
+講原理的科普片（3b1b 風格）。設定在 `brand.json` 的 `series.explainer`，和新聞短片分開：
+
+| 項目 | 經典乾貨拆解 | 新聞短片（對照） |
+|---|---|---|
+| 口號 | 帶你深入淺出，搞懂每一個為什麼。 | 用數據，看懂科技大事。 |
+| 片尾（吉祥物版，5 秒） | `assets/outro_explainer.mp4`：太陽吉祥物、logo、口號、三個按鈕。原始碼 `templates/manim/outro_explainer.py` | — |
+| 片尾（A 數據流版，3 秒） | `assets/outro_explainer_A_3s.mp4`：主口號「用白話，理解生活科技。」，小字「帶你深入淺出，搞懂每一個為什麼」。Remotion 的 `OutroA-explainer-3s` | `assets/outro_A_3s.mp4`（`OutroA-news-3s`） |
+| 口播收尾 | 「這裡是 Sunny 資料科學，帶你深入淺出，搞懂每一個為什麼。」`assets/signoff_explainer.wav`，5.44 秒 | `assets/signoff_sunny_podcast.wav` |
+| 口播畫面字幕 | 這裡是桑尼資料科學　帶你深入淺出搞懂每一個為什麼 | 這裡是桑尼資料科學　每週用數據拆解一則科技大事 |
+| 口播英文字幕 | Sunny Data Science: every why, made simple. | Sunny Data Science: one tech story, decoded with data, every week. |
+
+### 口播定版紀錄（2026-11-28）
+
+- 照新聞口播的做法：A1 男聲整句連讀，用 ElevenLabs 原始檔，不拼接、不調音高和速度。
+- 試錄 7 個版本：4 個只調設定（stability 0.40–0.65、speed 0.94–0.98），3 個在句中加口吻標籤（淡法式、溫暖、Podcast）。全部用 Scribe 逐字核對，沒有重複或漏字；接在新聞口播後、對齊 −16.5 LUFS 比較。
+- 使用者選定 T1：`signoff.py` 的原設定（stability 0.65、similarity 0.85、style 0.25、speed 0.98、seed 2026，模型 `eleven_v4`）。和新聞口播同一套設定，語氣最穩。
+- [核准原檔 MP3](assets/signoff_explainer_source.mp3) 原樣保存；[WAV](assets/signoff_explainer.wav) 只做解碼與取樣率轉換（48 kHz／24-bit 單聲道）。
+
 ## 聲音
 
 | 聲音 | ElevenLabs voice id |
@@ -50,4 +70,4 @@
 | A1 男聲 | `CG56nF519jHs9bMWKdXk` |
 | B1 女聲 | `gGmJOmvg7PPQJ8AkL8Yd` |
 
-影片工作資料夾的根目錄：Linux 是 `/home/sunny/Videos/`（原本 Windows 是 `D:\videos\`），每一支剪輯影片都放在這底下。聲音範本（`voice.json` 和換氣素材）在 `/home/sunny/Videos/聲音範本/`（Linux），不在 repo 裡。後製規格見 [錄音室級旁白](../../recipes/錄音室級旁白.md)。
+影片工作資料夾的根目錄（下稱 `<影片根目錄>`）由程式自動偵測：Windows 是 `D:\videos\`，Linux 是 `/home/sunny/Videos/`（`~/Videos`），設了環境變數 `VIDEOS_ROOT` 就以它為準（見 `helpers/paths.py`）。每一支剪輯影片都放在這底下。聲音範本（`voice.json` 和換氣素材）在 `<影片根目錄>/聲音範本/`，不在 repo 裡；`--voice-dir` 可以只寫範本名稱，例如 `A1_男聲`。後製規格見 [錄音室級旁白](../../recipes/錄音室級旁白.md)。
