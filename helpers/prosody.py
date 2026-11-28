@@ -1,6 +1,6 @@
 """Rhythm pass for narration: varied pace, pauses, pitch arc and breaths instead of one fixed rate.
 
-Usage: python helpers/prosody.py --voice-dir D:/videos/聲音範本/A1_男聲 --tag NAME [--sections 0,1] [--edit DIR]
+Usage: python helpers/prosody.py --voice-dir A1_男聲 --tag NAME [--sections 0,1] [--edit DIR]
        python helpers/prosody.py --voice ID --tag NAME --breath-from OLDTAG
   --edit is the episode edit/ folder (default: the current folder).
   reads  edit/voice/台詞_v2.txt
@@ -44,6 +44,7 @@ import numpy as np
 import soundfile as sf
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from paths import resolve_voice_dir  # noqa: E402
 from voice_tts import EDIT, PUNCT, load_key, parse_script  # noqa: E402
 
 OUT = EDIT / "voice" / "錄音室版"
@@ -516,7 +517,7 @@ def write_cues(report, audio):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--voice-dir", help="voice template folder (voice.json + breaths/*.wav), e.g. D:/videos/聲音範本/A1_男聲")
+    p.add_argument("--voice-dir", help="voice template folder (voice.json + breaths/*.wav): a full path, or a name under <videos root>/聲音範本/ such as A1_男聲 (root: D:/videos on Windows, ~/Videos on Linux; VIDEOS_ROOT overrides)")
     p.add_argument("--voice", help="voice id; read from --voice-dir when omitted")
     p.add_argument("--edit", help="episode edit/ folder (default: the current folder)")
     p.add_argument("--tag", required=True)
@@ -541,7 +542,7 @@ def main():
 
     bank = harvest([t for t in args.breath_from.split(",") if t])
     if args.voice_dir:
-        vdir = Path(args.voice_dir)
+        vdir = resolve_voice_dir(args.voice_dir)
         args.voice = args.voice or json.loads((vdir / "voice.json").read_text(encoding="utf-8"))["voice_id"]
         bank += [sf.read(f, dtype="float32")[0] for f in sorted((vdir / "breaths").glob("*.wav"))]
     if not args.voice:

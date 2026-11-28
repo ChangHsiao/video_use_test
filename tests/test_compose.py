@@ -220,6 +220,18 @@ def make_video(path, parts, fade=False, rate=30):
                     "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path)], check=True)
 
 
+# 手機直拍的影片：畫面存成橫的，另外記一個旋轉 90 度；讀寬高時要對調。ffmpeg 4.x 和新版都要讀得到
+class VideoSizeTest(unittest.TestCase):
+    def test_plain_and_rotated(self):
+        with tempfile.TemporaryDirectory() as d:
+            plain, rotated = Path(d) / "plain.mp4", Path(d) / "rotated.mp4"
+            make_video(plain, [("red", 0.5)])
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(plain), "-c", "copy",
+                            "-metadata:s:v:0", "rotate=90", str(rotated)], check=True)
+            self.assertEqual(cp.video_size(plain), (160, 90))
+            self.assertEqual(cp.video_size(rotated), (90, 160))
+
+
 class CheckCutsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

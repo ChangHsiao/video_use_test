@@ -1,0 +1,101 @@
+{
+  "voice": "male",
+  "voice_id": "CG56nF519jHs9bMWKdXk",
+  "measured": "2026-11-28",
+  "recipe": {
+    "model_id": "eleven_v4",
+    "output_format": "mp3_44100_192",
+    "voice_settings": {
+      "stability": 0.65,
+      "similarity_boost": 0.85,
+      "style": 0.25,
+      "speed": 0.98
+    },
+    "seed": 2026,
+    "recorder": "helpers/signoff.py"
+  },
+  "references": {
+    "brand": {
+      "file": "assets/新聞短片/news_signoff.wav",
+      "text": "這裡是 Sunny 資料科學，每週用數據，拆解一則科技大事。",
+      "fingerprint": {
+        "duration_s": 4.995,
+        "f0_median_hz": 115.5,
+        "f0_range_st": 11.6,
+        "rate_syl_s": 4.4,
+        "centroid_hz": 1876.0,
+        "mfcc": [
+          66.75,
+          19.5,
+          58.62,
+          16.73,
+          13.22,
+          -8.29,
+          7.01,
+          -3.86,
+          3.72,
+          -0.14,
+          -2.28,
+          -2.42
+        ],
+        "lufs": -16.5,
+        "true_peak_dbtp": -2.1
+      }
+    },
+    "explainer": {
+      "file": "assets/經典乾貨拆解/explainer_signoff.wav",
+      "text": "這裡是 Sunny 資料科學，帶你深入淺出，搞懂每一個為什麼。",
+      "fingerprint": {
+        "duration_s": 5.212,
+        "f0_median_hz": 139.3,
+        "f0_range_st": 14.24,
+        "rate_syl_s": 4.41,
+        "centroid_hz": 1718.0,
+        "mfcc": [
+          75.94,
+          24.25,
+          51.93,
+          2.36,
+          4.78,
+          -3.09,
+          3.62,
+          -7.54,
+          2.51,
+          -1.2,
+          -3.65,
+          -2.54
+        ],
+        "lufs": -15.3,
+        "true_peak_dbtp": -1.2
+      }
+    }
+  },
+  "center": {
+    "f0_median_hz": 127.4,
+    "f0_range_st": 12.92,
+    "rate_syl_s": 4.41,
+    "centroid_hz": 1797.0,
+    "lufs": -15.9,
+    "mfcc": [
+      71.34,
+      21.88,
+      55.27,
+      9.54,
+      9.0,
+      -5.69,
+      5.31,
+      -5.7,
+      3.12,
+      -0.67,
+      -2.96,
+      -2.48
+    ]
+  },
+  "tolerance": {
+    "f0_median_st": 2.55,
+    "f0_range_st": 2.0,
+    "rate_pct": 10.0,
+    "centroid_pct": 15.0,
+    "timbre": 25.0
+  }
+}

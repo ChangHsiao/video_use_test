@@ -8,6 +8,7 @@
 直式、橫式由風格的版型決定：broll_top 是 1080×1920，broll_wide 照風格的 canvas（例如「暗色科技風_橫式」是 1920×1080）。
 """
 
+import functools
 import json
 import math
 import re
@@ -263,12 +264,20 @@ def frame_rate(path):
         raise ComposeError(f"讀不到 {path} 的影格率：{out.stderr.strip()}")
 
 
+# 「照原本的影格輸出、不補也不丟」的參數名稱：ffmpeg 5.1 起叫 -fps_mode，更舊的版本（install.md 支援 4.x）只有 -vsync
+@functools.cache
+def passthrough_flag():
+    help_text = subprocess.run(["ffmpeg", "-hide_banner", "-h", "long"], capture_output=True, text=True,
+                               encoding="utf-8", errors="replace").stdout
+    return "-fps_mode" if "-fps_mode" in help_text else "-vsync"
+
+
 # 讀素材一段時間的畫面，縮小成 64×36 灰階，回傳 (格數, 36, 64) 的陣列。
 # 用素材原本的影格率讀：轉成每秒 30 格會插入重複的格（變化是 0），把比較用的中位數拉低，造成誤報（11/11 實測）
 def gray_frames(path, start, length):
     out = subprocess.run(
         ["ffmpeg", "-v", "error", "-ss", f"{max(start, 0.0):.3f}", "-i", str(path), "-t", f"{length:.3f}",
-         "-vf", "scale=64:36,format=gray", "-fps_mode", "passthrough", "-f", "rawvideo", "-"],
+         "-vf", "scale=64:36,format=gray", passthrough_flag(), "passthrough", "-f", "rawvideo", "-"],
         capture_output=True,
     )
     if out.returncode != 0:
@@ -389,11 +398,11 @@ def check_cuts(shots, out_dir):
     return issues
 
 
-# 讀素材的寬高；手機直拍的影片會記錄旋轉角度，轉 90 度時寬高對調
+# 讀素材的寬高；手機直拍的影片會記錄旋轉角度，轉 90 度時寬高對調。
+# 用 -show_streams 讀整個串流：-show_entries 的 stream_side_data 區段在 ffprobe 4.x 不存在，會整個失敗
 def video_size(path):
     out = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:stream_side_data=rotation",
-         "-of", "json", str(path)],
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_streams", "-of", "json", str(path)],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     try:

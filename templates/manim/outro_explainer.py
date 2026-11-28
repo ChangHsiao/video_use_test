@@ -10,20 +10,21 @@ What it shows (one thing at a time, then holds; no fade-out):
 
 Every text, colour and the logo come from brands/<brand>/brand.json through helpers/registry.py:
     name                     brand name (big white line)
+    name_en                  Latin name, set in capitals
     colors.mint              Latin name, icons and pill outlines
     logo.mark                logo SVG (its background tile rect is dropped; the mark keeps its own colours)
     series.explainer.slogan  slogan line;  series.explainer.outro  where the finished video goes
     mascot                   the sun mascot (templates/manim/sun_mascot.py)
-The Latin name is LATIN below (brand.json has no field for it). To change wording, edit brand.json.
+To change wording, edit brand.json; nothing brand-specific is written in this file.
 
 Length: OUTRO_SECONDS (default 5.0, valid 4.0-6.5). The beat sheet is laid out for 5 s and scales with
 the length, but always leaves a static hold of >= HOLD_MIN seconds at the end (the ~4.5 s spoken
-sign-off plays over it). Brand: OUTRO_BRAND (default 桑尼資料科學).
+sign-off plays over it). Brand: --brand (required; passed to the Manim process as OUTRO_BRAND).
 
 Render (writes brands/<brand>/<series.explainer.outro>, H.264 yuv420p crf 16, 1080x1920, 30 fps):
-    py -3.11 templates/manim/outro_explainer.py                 # 5.0 s
-    OUTRO_SECONDS=6 py -3.11 templates/manim/outro_explainer.py --out D:/somewhere/Outro.mp4
-    (PowerShell: $env:OUTRO_SECONDS = '6'; py -3.11 templates/manim/outro_explainer.py --out ...)
+    py -3.11 templates/manim/outro_explainer.py --brand 桑尼資料科學                 # 5.0 s
+    OUTRO_SECONDS=6 py -3.11 templates/manim/outro_explainer.py --brand 桑尼資料科學 --out D:/somewhere/Outro.mp4
+    (PowerShell: $env:OUTRO_SECONDS = '6'; py -3.11 templates/manim/outro_explainer.py --brand ... --out ...)
 This runs `manim render --disable_caching --media_dir D:/manim_media/outro --video-codec libx264
 --pixel-format yuv420p --encoder-option crf=16 --encoder-option preset=slow templates/manim/outro_explainer.py
 OutroExplainer` (one lossy encode; the --video-codec/--encoder-option flags need Manim CE >= 0.22) and
@@ -37,6 +38,7 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -51,14 +53,15 @@ sys.path.insert(0, str(HERE.parents[1] / "helpers"))
 import registry  # noqa: E402
 from sun_mascot import SunMascot  # noqa: E402
 
-BRAND = os.environ.get("OUTRO_BRAND", "桑尼資料科學")
+BRAND = os.environ.get("OUTRO_BRAND", "")  # set by main() from --brand
 SECONDS = float(os.environ.get("OUTRO_SECONDS", "5.0"))
-LATIN = "SUNNY DATA SCIENCE"
-ZH_FONT = "Microsoft JhengHei"
+# Windows keeps the original JhengHei; elsewhere use the CJK font every Linux/Mac box with Noto has
+ZH_FONT = os.environ.get("OUTRO_ZH_FONT", "Microsoft JhengHei" if os.name == "nt" else "Noto Sans CJK TC")
 HOLD_MIN = 1.25          # static seconds at the end (brief: >= 1.2)
 FRAME_SLACK = 0.15       # each play() rounds up to whole frames: 4 plays can add up to ~0.13 s
 BEATS_END = 4.06         # where the 5 s beat sheet's last motion ends (mascot back to happy)
-MEDIA_DIR = "D:/manim_media/outro"
+MEDIA_DIR = os.environ.get("OUTRO_MEDIA_DIR", "D:/manim_media/outro" if os.name == "nt"
+                           else str(Path(tempfile.gettempdir()) / "manim_media" / "outro"))
 
 config.pixel_width, config.pixel_height, config.frame_rate = 1080, 1920, 30
 config.frame_width = 8.0
@@ -124,8 +127,11 @@ def hop_path(start, end, peak):
 
 class OutroExplainer(Scene):
     def construct(self):
+        if not BRAND:
+            raise registry.ConfigError("沒有指定品牌：用 --brand（或環境變數 OUTRO_BRAND）")
         brand = registry.load_brand(BRAND)
         d = brand.data
+        latin_name = d["name_en"].upper()
         series = d["series"]["explainer"]
         mint = brand.colors["mint"]
         T = SECONDS
@@ -147,14 +153,14 @@ class OutroExplainer(Scene):
         name = Text(d["name"], font=ZH_FONT, weight="BOLD", font_size=44, color="#FFFFFF").move_to([0, -0.2, 0])
 
         lat_font = latin_font(brand)
-        chars = [Text(c, font=lat_font, font_size=17, color=mint) for c in LATIN]
+        chars = [Text(c, font=lat_font, font_size=17, color=mint) for c in latin_name]
         latin = VGroup(*chars)
         space_w = 0.07
         lat_y = name.get_bottom()[1] - 0.38
 
         def lay_out(spacing):
             x = 0.0
-            for c, ch in zip(LATIN, chars):
+            for c, ch in zip(latin_name, chars):
                 if c == " ":
                     x += space_w + spacing
                     continue
@@ -169,6 +175,8 @@ class OutroExplainer(Scene):
 
         pills = VGroup(pill(icon_follow(), "追蹤", mint), pill(icon_like(), "按讚", mint),
                        pill(icon_share(), "分享", mint)).arrange(RIGHT, buff=0.3).move_to([0, -2.45, 0])
+        # a long slogan never gets wider than the pill row (keeps it clear of the Shorts side buttons)
+        slogan.scale(min(1.0, pills.width / slogan.width))
 
         # ----- a + b: hop in, look at the centre, land, point at the logo while it draws -----
         hop = MoveAlongPath(sun, hop_path(sun.get_center(), sun_pos, np.array([-1.6, 4.3, 0])),
@@ -223,9 +231,11 @@ class OutroExplainer(Scene):
 
 def main():
     ap = argparse.ArgumentParser(description="Render OutroExplainer and encode it to the brand's series outro path")
+    ap.add_argument("--brand", required=True, help="brands/<name>/")
     ap.add_argument("--out", help="output mp4 (default: brands/<brand>/<series.explainer.outro>)")
     args = ap.parse_args()
-    brand = registry.load_brand(BRAND)
+    os.environ["OUTRO_BRAND"] = args.brand  # the manim subprocess below reads it
+    brand = registry.load_brand(args.brand)
     out = Path(args.out) if args.out else brand.root / brand.data["series"]["explainer"]["outro"]
     # one lossy encode only: Manim's own libx264 encoder at the delivery settings, then a stream copy
     subprocess.run([sys.executable, "-m", "manim", "render", "--disable_caching", "--media_dir", MEDIA_DIR,
