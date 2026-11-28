@@ -1,6 +1,6 @@
 """Rhythm pass for narration: varied pace, pauses, pitch arc and breaths instead of one fixed rate.
 
-Usage: python helpers/prosody.py --voice-dir D:/videos/聲音範本/A1_男聲 --tag NAME [--sections 0,1] [--edit DIR]
+Usage: python helpers/prosody.py --voice-dir /home/sunny/Videos/聲音範本/A1_男聲 --tag NAME [--sections 0,1] [--edit DIR]
        python helpers/prosody.py --voice ID --tag NAME --breath-from OLDTAG
   --edit is the episode edit/ folder (default: the current folder).
   reads  edit/voice/台詞_v2.txt
@@ -516,7 +516,7 @@ def write_cues(report, audio):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--voice-dir", help="voice template folder (voice.json + breaths/*.wav), e.g. D:/videos/聲音範本/A1_男聲")
+    p.add_argument("--voice-dir", help="voice template folder (voice.json + breaths/*.wav), e.g. /home/sunny/Videos/聲音範本/A1_男聲")
     p.add_argument("--voice", help="voice id; read from --voice-dir when omitted")
     p.add_argument("--edit", help="episode edit/ folder (default: the current folder)")
     p.add_argument("--tag", required=True)

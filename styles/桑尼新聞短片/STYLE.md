@@ -7,7 +7,7 @@
 | 品牌 | [桑尼資料科學](../../brands/桑尼資料科學/BRAND.md)：CIS、logo、字型、片尾、口播收尾。`style.json` 用 `"brand": "桑尼資料科學"` 接上 |
 | 給程式讀的數值 | `style.json`（版型 `news_band`，由 `helpers/news_short.py` 畫） |
 | 研究依據 | 參考短片拆解：[研究_參考短片拆解.md](研究_參考短片拆解.md)<br>封面、標題、片尾的研究：[品牌資料夾的研究_封面標題片尾.md](../../brands/桑尼資料科學/研究_封面標題片尾.md)<br>聲音規格：[recipes/錄音室級旁白.md](../../recipes/錄音室級旁白.md) |
-| 範例 | `D:\videos\黃仁勳辭任\edit\short_v6.mp4`（EP.01），分鏡寫在同一層的 `短片.json`；封面範例 `examples/cover_example_ai.png`；EP.01 比較三種封面的程式 `examples/ep01_covers.py` |
+| 範例 | `/home/sunny/Videos/黃仁勳辭任/edit/short_v6.mp4`（Linux）（EP.01），分鏡寫在同一層的 `短片.json`；封面範例 `examples/cover_example_ai.png`；EP.01 比較三種封面的程式 `examples/ep01_covers.py` |
 | 狀態 | 第一版 2026-11-20；2026-11-22 拆出流程和品牌，這份只留畫面規則 |
 
 ## 固定的規則

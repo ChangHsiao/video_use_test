@@ -50,4 +50,4 @@
 | A1 男聲 | `CG56nF519jHs9bMWKdXk` |
 | B1 女聲 | `gGmJOmvg7PPQJ8AkL8Yd` |
 
-聲音範本（`voice.json` 和換氣素材）在 `D:\videos\聲音範本\`，不在 repo 裡。後製規格見 [錄音室級旁白](../../recipes/錄音室級旁白.md)。
+影片工作資料夾的根目錄：Linux 是 `/home/sunny/Videos/`（原本 Windows 是 `D:\videos\`），每一支剪輯影片都放在這底下。聲音範本（`voice.json` 和換氣素材）在 `/home/sunny/Videos/聲音範本/`（Linux），不在 repo 裡。後製規格見 [錄音室級旁白](../../recipes/錄音室級旁白.md)。

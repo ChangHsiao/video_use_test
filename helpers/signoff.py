@@ -1,6 +1,6 @@
 """Record sign-off (spoken slogan) candidates once, in the studio chain, for reuse in every episode.
 
-Usage: python helpers/signoff.py --voice-dir D:/videos/聲音範本/A1_男聲 [--edit DIR]
+Usage: python helpers/signoff.py --voice-dir /home/sunny/Videos/聲音範本/A1_男聲 [--edit DIR]
   writes edit/voice/signoff/<key>.wav (+ .mp3) for each candidate below
 A sign-off is a sonic logo: generate it once, keep the chosen file, never regenerate it per episode.
 """
